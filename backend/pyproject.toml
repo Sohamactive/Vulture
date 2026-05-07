@@ -16,4 +16,12 @@ dependencies = [
     "tree-sitter-ruby>=0.23.1",
     "tree-sitter-rust>=0.24.2",
     "tree-sitter-typescript>=0.23.2",
+    "boto3>=1.35.0",
+    "fastapi>=0.136.1",
+    "pydantic>=2.13.4",
+    "pyjwt>=2.12.1",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.49",
+    "tree-sitter>=0.25.2",
+    "uvicorn[standard]>=0.46.0",
 ]
