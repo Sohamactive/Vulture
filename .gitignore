@@ -1,4 +1,4 @@
-#Frontend
+<#1484571859235377172>
 
 # Logs
 logs
@@ -25,10 +25,16 @@ dist-ssr
 *.sln
 *.sw?
 
-#Backend
+<#1484571884497408322>
 
 .venv
 .env
 */uv.lock
 
-
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
