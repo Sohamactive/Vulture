@@ -27,7 +27,8 @@ dist-ssr
 
 #Backend
 
-*/.venv/*
+.venv
 .env
+*/uv.lock
 
 
