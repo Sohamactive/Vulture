@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from openai import APIConnectionError, APIError, AuthenticationError, BadRequestError, RateLimitError
-
+from dotenv import load_dotenv
+import os
 from app.api.schemas import ApiResponse, ConnectivityRequest, ErrorDetail
 from app.tools.bedrock_client import (
     BedrockConfigError,
@@ -9,6 +10,8 @@ from app.tools.bedrock_client import (
     invoke_gemini_text,
 )
 
+
+# GOO
 router = APIRouter(prefix="/connectivity", tags=["connectivity"])
 
 

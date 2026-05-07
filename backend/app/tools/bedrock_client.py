@@ -53,10 +53,10 @@ def invoke_claude_messages(
 
     client = OpenAI(api_key=api_key, base_url=base_url)
 
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model=resolved_model_id,
-        input=[{"role": "user", "content": prompt}],
-        max_output_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tokens,
         temperature=temperature,
     )
 
@@ -68,10 +68,16 @@ def invoke_claude_messages(
     else:
         raw_response = {"response": response}
 
+    text = None
+    if getattr(response, "choices", None):
+        choice = response.choices[0]
+        text = getattr(choice.message, "content", None)
+
     return {
         "model_id": resolved_model_id,
         "request_id": getattr(response, "id", None),
         "raw_response": raw_response,
+        "text": text,
     }
 
 
