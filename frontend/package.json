@@ -20,12 +20,7 @@
     "postcss": "^8.5.14",
     "prismjs": "^1.30.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "react-router-dom": "^7.15.0",
-    "recharts": "^3.8.1",
-    "tailwindcss": "^4.2.4",
-    "three": "^0.184.0",
-    "zustand": "^5.0.13"
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

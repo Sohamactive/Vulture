@@ -23,7 +23,7 @@ function App() {
         <Routes>
           {/* Public Route */}
           <Route path="/" element={<Landing />} />
-          
+
           {/* Protected Routes */}
           <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
           <Route path="/report/:scanId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
