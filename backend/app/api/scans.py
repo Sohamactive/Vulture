@@ -1,68 +1,81 @@
 import uuid
-from typing import Dict, List
+from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from starlette.concurrency import run_in_threadpool
 
 from app.agents.orchestrator import start_scan
 from app.api.dependencies import ClerkUser, get_current_user
-from app.api.schemas import ApiResponse, ScanCreateRequest, ScanSummary
+from app.api.schemas import ApiResponse, ScanCreateRequest, ScanSummary, VulnerabilitySummary
+from app.storage import crud
+from app.storage.db import AsyncSessionLocal, get_db
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
-_SCAN_STORE: Dict[str, ScanSummary] = {}
-_SCAN_REPORTS: Dict[str, dict] = {}
 
+async def _run_scan(scan_id: str, payload: ScanCreateRequest, user_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        await crud.update_scan_status(session, scan_id, user_id, status="cloning")
 
-def _run_scan(scan_id: str, payload: ScanCreateRequest, user: ClerkUser) -> None:
-    summary = _SCAN_STORE[scan_id]
-    summary.status = "cloning"
-    _SCAN_STORE[scan_id] = summary
+    await run_in_threadpool(
+        start_scan,
+        scan_id=scan_id,
+        repo_url=payload.repo_url,
+        branch=payload.branch,
+        user_id=user_id,
+    )
 
-    start_scan(scan_id=scan_id, repo_url=payload.repo_url,
-               branch=payload.branch, user_id=user.id)
+    summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    issues: List[VulnerabilitySummary] = []
 
-    summary.status = "completed"
-    summary.security_score = 100
-    summary.summary = {"critical": 0, "high": 0,
-                       "medium": 0, "low": 0, "info": 0}
-    _SCAN_STORE[scan_id] = summary
-
-    _SCAN_REPORTS[scan_id] = {
-        "id": scan_id,
-        "summary": summary.summary,
-        "security_score": summary.security_score,
-        "issues": [],
-    }
+    async with AsyncSessionLocal() as session:
+        await crud.update_scan_status(
+            session,
+            scan_id,
+            user_id,
+            status="completed",
+            security_score=100,
+            summary=summary,
+        )
+        await crud.replace_scan_report(
+            session,
+            scan_id,
+            user_id,
+            summary=summary,
+            security_score=100,
+            issues=issues,
+        )
 
 
 @router.post("", response_model=ApiResponse, status_code=status.HTTP_202_ACCEPTED)
-def create_scan(
+async def create_scan(
     payload: ScanCreateRequest,
     background_tasks: BackgroundTasks,
     user: ClerkUser = Depends(get_current_user),
+    session=Depends(get_db),
 ) -> ApiResponse:
     scan_id = str(uuid.uuid4())
-    summary = ScanSummary(
-        id=scan_id,
-        repo_full_name=f"{payload.repo_owner}/{payload.repo_name}",
-        repo_url=payload.repo_url,
-        branch=payload.branch,
-        status="pending",
-    )
-    _SCAN_STORE[scan_id] = summary
-    background_tasks.add_task(_run_scan, scan_id, payload, user)
+    summary = await crud.create_scan(session, scan_id, payload, user.id)
+    background_tasks.add_task(_run_scan, scan_id, payload, user.id)
     return ApiResponse(data=summary)
 
 
 @router.get("/history", response_model=ApiResponse)
-def scan_history(user: ClerkUser = Depends(get_current_user)) -> ApiResponse:
-    scans: List[ScanSummary] = [scan for scan in _SCAN_STORE.values() if scan]
+async def scan_history(
+    user: ClerkUser = Depends(get_current_user),
+    session=Depends(get_db),
+) -> ApiResponse:
+    scans = await crud.list_scans(session, user.id)
     return ApiResponse(data=scans)
 
 
 @router.get("/{scan_id}", response_model=ApiResponse)
-def get_scan(scan_id: str, user: ClerkUser = Depends(get_current_user)) -> ApiResponse:
-    summary = _SCAN_STORE.get(scan_id)
+async def get_scan(
+    scan_id: str,
+    user: ClerkUser = Depends(get_current_user),
+    session=Depends(get_db),
+) -> ApiResponse:
+    summary = await crud.get_scan(session, scan_id, user.id)
     if not summary:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
@@ -70,12 +83,13 @@ def get_scan(scan_id: str, user: ClerkUser = Depends(get_current_user)) -> ApiRe
 
 
 @router.post("/{scan_id}/rerun", response_model=ApiResponse)
-def rerun_scan(
+async def rerun_scan(
     scan_id: str,
     background_tasks: BackgroundTasks,
     user: ClerkUser = Depends(get_current_user),
+    session=Depends(get_db),
 ) -> ApiResponse:
-    summary = _SCAN_STORE.get(scan_id)
+    summary = await crud.get_scan(session, scan_id, user.id)
     if not summary:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
@@ -86,7 +100,6 @@ def rerun_scan(
         repo_name=summary.repo_full_name.split("/")[1],
         branch=summary.branch,
     )
-    summary.status = "pending"
-    _SCAN_STORE[scan_id] = summary
-    background_tasks.add_task(_run_scan, scan_id, payload, user)
+    summary = await crud.update_scan_status(session, scan_id, user.id, status="pending")
+    background_tasks.add_task(_run_scan, scan_id, payload, user.id)
     return ApiResponse(data=summary)

@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
+
+from app.agents.vuln_agent import run_vuln_agent
 
 try:
     from app.code_parsing.ast_parser import parse_python_file
@@ -319,223 +320,11 @@ def route_findings(state: ScanState) -> str:
 # NODE 6 — LLM agent
 # ---------------------------------------------------------------------------
 
-def _extract_function_snippets(
-    source: str,
-    functions: list[dict],
-    max_functions: int = 5,
-    max_lines_per_fn: int = 40,
-) -> list[dict]:
-    """Extract actual source code for the top functions in a file.
-
-    Returns a list of {name, line_start, line_end, args, body} dicts.
-    Truncates long function bodies to keep the prompt under control.
-    """
-    lines = source.splitlines()
-    snippets: list[dict] = []
-    for fn in functions[:max_functions]:
-        start = fn.get("line_start", 1) - 1   # 0-indexed
-        end   = fn.get("line_end") or (start + max_lines_per_fn)
-        body_lines = lines[start:end]
-        if len(body_lines) > max_lines_per_fn:
-            body_lines = body_lines[:max_lines_per_fn] + ["    # ... truncated ..."]
-        snippets.append({
-            "name":       fn.get("name", "?"),
-            "line_start": fn.get("line_start"),
-            "line_end":   fn.get("line_end"),
-            "args":       fn.get("args", []),
-            "body":       "\n".join(body_lines),
-        })
-    return snippets
-
-
-def _build_agent_context(state: ScanState) -> str:
-    semgrep_findings = state["semgrep_out"].get("findings", [])
-    parse_results    = state["parse_results"]
-    call_graph       = state["call_graph_out"]
-    source_files     = state.get("file_reader_out", {}).get("files", {})
-
-    # Build enriched flagged-file entries with actual source code
-    flagged_files: list[dict] = []
-    for pr in parse_results:
-        flags  = pr.get("security_flags", {})
-        active = [k for k, v in flags.items() if v]
-        if not active:
-            continue
-
-        filepath = pr["filepath"]
-        entry: dict = {
-            "filepath":  filepath,
-            "flags":     active,
-        }
-
-        # Attach actual function source code if available
-        source = source_files.get(filepath, "")
-        if source and pr.get("functions"):
-            entry["functions"] = _extract_function_snippets(
-                source, pr["functions"]
-            )
-        else:
-            # At minimum give function signatures
-            entry["functions"] = [
-                {"name": f.get("name"), "args": f.get("args", []),
-                 "line_start": f.get("line_start")}
-                for f in pr.get("functions", [])[:5]
-            ]
-
-        flagged_files.append(entry)
-
-    context = f"""
-You are a senior application security engineer performing a static
-code analysis. Analyze the findings below and provide a structured
-vulnerability report.
-
-=== SEMGREP FINDINGS ({len(semgrep_findings)}) ===
-{json.dumps(semgrep_findings, indent=2)}
-
-=== AST SECURITY FLAGS (with source code) ===
-{json.dumps(flagged_files, indent=2, default=str)}
-
-=== CALL GRAPH HOTSPOTS ===
-{json.dumps(call_graph.get("hotspots", []), indent=2)}
-
-=== CIRCULAR IMPORTS ===
-{json.dumps(call_graph.get("circular_imports", []), indent=2)}
-
-For each finding provide:
-1. severity: CRITICAL / HIGH / MEDIUM / LOW
-2. title: short descriptive title
-3. description: what the vulnerability is
-4. filepath + line_start
-5. code_snippet: the vulnerable code
-6. exploitability: is it actually exploitable given the call graph context?
-7. confidence: HIGH / MEDIUM / LOW — with a brief reason
-   (e.g. "HIGH — confirmed by Semgrep rule match",
-         "MEDIUM — pattern detected but requires manual review",
-         "LOW — flagged by heuristic, may be false positive")
-8. fix: specific code fix recommendation
-9. cwe: relevant CWE ID if applicable
-
-Return ONLY a valid JSON object with this exact schema (no markdown fences):
-{{
-  "findings": [
-    {{
-      "severity":       "CRITICAL",
-      "title":          "SQL Injection via string concatenation",
-      "description":    "...",
-      "filepath":       "src/auth.py",
-      "line_start":     42,
-      "code_snippet":   "cursor.execute('SELECT * FROM users WHERE id=' + user_id)",
-      "exploitability": "HIGH — fetch_user() is called directly from the public API",
-      "confidence":     "HIGH — confirmed by Semgrep rule match and AST flag",
-      "fix":            "Use parameterized queries: cursor.execute(..., (user_id,))",
-      "cwe":            "CWE-89"
-    }}
-  ],
-  "summary": "Found 3 critical, 2 high, 1 medium vulnerability",
-  "risk_score": 8.5,
-  "most_vulnerable_file": "src/auth.py"
-}}
-"""
-    return context
-
-
-def _parse_llm_json(raw: str) -> dict:
-    """Strip markdown fences and parse JSON from LLM response."""
-    text = raw.strip()
-    # Strip ```json ... ``` or ``` ... ```
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*```$", "", text)
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # Try to extract first JSON object
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise
-
-
-def _extract_response_text(content: object) -> str:
-    """Normalise a LangChain response content to a plain string.
-
-    Different models return different types:
-      - str          — Gemini Flash / Pro, most models
-      - list[dict]   — Gemma, some Gemini variants (list of content parts)
-      - list[str]    — rare edge case
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                # content part: {"type": "text", "text": "..."}
-                parts.append(item.get("text") or str(item))
-            else:
-                parts.append(str(item))
-        return "\n".join(parts)
-    return str(content)
-
-
-def _create_llm():
-    """Create the LLM client based on environment configuration.
-
-    Priority:
-      1. AWS Bedrock via Mantle (OPENAI_BASE_URL + OPENAI_API_KEY)
-      2. Gemini (GEMINI_API_KEY)
-    """
-    # --- Bedrock Mantle (OpenAI-compatible) ---
-    openai_base_url = os.environ.get("OPENAI_BASE_URL", "").strip().strip('"')
-    openai_api_key  = os.environ.get("OPENAI_API_KEY", "").strip()
-    bedrock_model   = os.environ.get("AWS_BEDROCK_MODEL_ID", "mistral.mistral-large-3-675b-instruct")
-
-    if openai_base_url and openai_api_key:
-        from langchain_openai import ChatOpenAI
-
-        logger.info(
-            f"[node_agent] using Bedrock Mantle: model={bedrock_model}, "
-            f"base_url={openai_base_url}"
-        )
-        return ChatOpenAI(
-            model=bedrock_model,
-            api_key=openai_api_key,
-            base_url=openai_base_url,
-            temperature=0,
-        )
-
-    # --- Gemini fallback ---
-    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    gemini_model = os.environ.get("GEMINI_MODEL_ID", "gemini-2.0-flash")
-
-    if gemini_key:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        logger.info(f"[node_agent] using Gemini: model={gemini_model}")
-        return ChatGoogleGenerativeAI(
-            model=gemini_model,
-            google_api_key=gemini_key,
-            temperature=0,
-        )
-
-    raise ValueError(
-        "No LLM configured. Set OPENAI_BASE_URL + OPENAI_API_KEY (Bedrock) "
-        "or GEMINI_API_KEY in backend/.env"
-    )
-
-
 def node_agent(state: ScanState) -> dict:
     logger.info("[node_agent] invoking LLM")
 
     try:
-        llm      = _create_llm()
-        context  = _build_agent_context(state)
-        response = llm.invoke(context)
-        # Normalise to str — some models return a list of content parts
-        raw_text  = _extract_response_text(response.content)
-        agent_out = _parse_llm_json(raw_text)
+        agent_out = run_vuln_agent(state)
         logger.info(
             f"[node_agent] LLM returned {len(agent_out.get('findings', []))} findings"
         )

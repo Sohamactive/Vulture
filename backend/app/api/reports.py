@@ -2,31 +2,56 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import get_current_user
 from app.api.schemas import ApiResponse, ScanReport
-from app.api.scans import _SCAN_REPORTS
 from app.export.report_generator import generate_report
+from app.storage import crud
+from app.storage.db import get_db
 
-router = APIRouter(prefix="/scans", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/{scan_id}/vulnerabilities", response_model=ApiResponse)
-def get_scan_report(scan_id: str, _user=Depends(get_current_user)) -> ApiResponse:
-    report = _SCAN_REPORTS.get(scan_id)
-    if not report:
-        empty = ScanReport(id=scan_id, summary={
-                           "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0})
-        return ApiResponse(data=empty)
-    return ApiResponse(data=ScanReport(**report))
+async def get_scan_report(
+    scan_id: str,
+    user=Depends(get_current_user),
+    session=Depends(get_db),
+) -> ApiResponse:
+    result = await crud.get_scan_report(session, scan_id, user.id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found",
+        )
+    scan, issues = result
+    return ApiResponse(
+        data=ScanReport(
+            id=scan.id,
+            summary=scan.summary or {
+                "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0},
+            security_score=scan.security_score,
+            issues=issues,
+        )
+    )
 
 
 @router.get("/{scan_id}/export", response_model=ApiResponse)
-def export_scan_report(
+async def export_scan_report(
     scan_id: str,
     export_format: str = Query(default="json", pattern="^(json|pdf)$"),
-    _user=Depends(get_current_user),
+    user=Depends(get_current_user),
+    session=Depends(get_db),
 ) -> ApiResponse:
-    report = _SCAN_REPORTS.get(scan_id)
-    if not report:
+    result = await crud.get_scan_report(session, scan_id, user.id)
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    exported = generate_report(report=report, export_format=export_format)
+    scan, issues = result
+    report = ScanReport(
+        id=scan.id,
+        summary=scan.summary or {"critical": 0,
+                                 "high": 0, "medium": 0, "low": 0, "info": 0},
+        security_score=scan.security_score,
+        issues=issues,
+    )
+    exported = generate_report(
+        report=report.model_dump(), export_format=export_format)
     return ApiResponse(data=exported)
