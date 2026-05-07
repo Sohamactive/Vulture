@@ -1,71 +1,34 @@
-import './App.css'
-import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
+import { Routes, Route } from 'react-router-dom'
+import Navbar from './components/layout/Navbar'
+import Landing from './pages/Landing'
+import Scan from './pages/Scan'
+import Report from './pages/Report'
+import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
+
+// ProtectedRoute component requires auth
+function ProtectedRoute({ children }) {
+  return (
+    <>
+      <SignedIn>{children}</SignedIn>
+      <SignedOut><RedirectToSignIn /></SignedOut>
+    </>
+  );
+}
 
 function App() {
   return (
-    <div className="app">
-      <header className="site-header">
-        <div className="brand">
-          <span className="brand-mark">V</span>
-          <span className="brand-text">Vulture</span>
-        </div>
-        <Show when="signed-out">
-          <div className="auth-actions">
-            <SignInButton>
-              <button className="btn ghost" type="button">
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton>
-              <button className="btn primary" type="button">
-                Sign up
-              </button>
-            </SignUpButton>
-          </div>
-        </Show>
-        <Show when="signed-in">
-          <div className="user-shell">
-            <UserButton />
-          </div>
-        </Show>
-      </header>
-      <main className="hero">
-        <div className="hero-content">
-          <p className="eyebrow">Github security scan</p>
-          <h1>
-            Ship faster. <span>Scan deeper.</span>
-          </h1>
-          <p className="lede">
-            Vulture pulls your private repos, runs a hybrid scan, and delivers a
-            clean, actionable vulnerability report.
-          </p>
-          <div className="hero-actions">
-            <button className="btn primary" type="button">
-              Start free scan
-            </button>
-            <button className="btn ghost" type="button">
-              View docs
-            </button>
-          </div>
-        </div>
-        <div className="hero-panel" aria-hidden="true">
-          <div className="pulse"></div>
-          <div className="panel-grid">
-            <div className="panel-card">
-              <p className="panel-title">OWASP Coverage</p>
-              <p className="panel-value">10 / 10</p>
-            </div>
-            <div className="panel-card">
-              <p className="panel-title">Average scan</p>
-              <p className="panel-value">4.6s</p>
-            </div>
-            <div className="panel-card">
-              <p className="panel-title">Critical findings</p>
-              <p className="panel-value">0</p>
-            </div>
-          </div>
-        </div>
-      </main>
+    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-mono flex flex-col">
+      <Navbar />
+      <div className="pt-16 flex-grow relative"> {/* Offset for fixed Navbar */}
+        <Routes>
+          {/* Public Route */}
+          <Route path="/" element={<Landing />} />
+
+          {/* Protected Routes */}
+          <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
+          <Route path="/report/:scanId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
+        </Routes>
+      </div>
     </div>
   )
 }

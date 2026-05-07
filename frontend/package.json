@@ -10,11 +10,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@clerk/react": "^6.6.1",
+    "@clerk/clerk-react": "^5.61.6",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@tailwindcss/vite": "^4.2.4",
+    "autoprefixer": "^10.5.0",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.14.0",
+    "postcss": "^8.5.14",
+    "prismjs": "^1.30.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "tailwindcss": "^4.2.4"
+    "react-router-dom": "^7.15.0",
+    "recharts": "^3.8.1",
+    "tailwindcss": "^4.2.4",
+    "three": "^0.184.0",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

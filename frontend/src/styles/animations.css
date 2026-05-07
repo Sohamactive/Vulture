@@ -1,0 +1,57 @@
+/* Scanner beam sweep */
+@keyframes scanBeam {
+  0%   { left: -5%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 105%; opacity: 0; }
+}
+
+.scanner-beam {
+  position: absolute;
+  width: 60px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #00f5ff22, #00f5ff88, #00f5ff22, transparent);
+  animation: scanBeam 3s ease-in-out infinite;
+}
+
+/* Glitch text effect */
+@keyframes glitch1 {
+  0%, 100% { clip-path: inset(0 0 95% 0); transform: translate(-4px, 0); }
+  50%       { clip-path: inset(30% 0 50% 0); transform: translate(4px, 0); }
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0; left: 0;
+  color: var(--cyan);
+}
+.glitch-text::before { animation: glitch1 3s infinite; color: var(--red); }
+.glitch-text::after  { animation: glitch1 3s infinite 0.1s; }
+
+/* Pulse ring on CTA */
+@keyframes pulseRing {
+  0%   { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.pulse-ring {
+  position: absolute;
+  border: 1px solid var(--cyan);
+  border-radius: 4px;
+  animation: pulseRing 2s ease-out infinite;
+}
+
+/* Terminal cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor { animation: blink 1s step-end infinite; }
+
+/* Severity badge glow */
+.badge-critical { box-shadow: var(--glow-red); border-color: var(--red); }
+.badge-high     { box-shadow: 0 0 12px var(--high-sev)66; border-color: var(--high-sev); }
+.badge-medium   { box-shadow: 0 0 12px #ffaa0066; border-color: var(--amber); }
+.badge-low      { box-shadow: var(--glow-cyan); border-color: var(--cyan); }
