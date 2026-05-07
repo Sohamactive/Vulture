@@ -319,17 +319,70 @@ def route_findings(state: ScanState) -> str:
 # NODE 6 — LLM agent
 # ---------------------------------------------------------------------------
 
+def _extract_function_snippets(
+    source: str,
+    functions: list[dict],
+    max_functions: int = 5,
+    max_lines_per_fn: int = 40,
+) -> list[dict]:
+    """Extract actual source code for the top functions in a file.
+
+    Returns a list of {name, line_start, line_end, args, body} dicts.
+    Truncates long function bodies to keep the prompt under control.
+    """
+    lines = source.splitlines()
+    snippets: list[dict] = []
+    for fn in functions[:max_functions]:
+        start = fn.get("line_start", 1) - 1   # 0-indexed
+        end   = fn.get("line_end") or (start + max_lines_per_fn)
+        body_lines = lines[start:end]
+        if len(body_lines) > max_lines_per_fn:
+            body_lines = body_lines[:max_lines_per_fn] + ["    # ... truncated ..."]
+        snippets.append({
+            "name":       fn.get("name", "?"),
+            "line_start": fn.get("line_start"),
+            "line_end":   fn.get("line_end"),
+            "args":       fn.get("args", []),
+            "body":       "\n".join(body_lines),
+        })
+    return snippets
+
+
 def _build_agent_context(state: ScanState) -> str:
     semgrep_findings = state["semgrep_out"].get("findings", [])
     parse_results    = state["parse_results"]
     call_graph       = state["call_graph_out"]
+    source_files     = state.get("file_reader_out", {}).get("files", {})
 
+    # Build enriched flagged-file entries with actual source code
     flagged_files: list[dict] = []
     for pr in parse_results:
         flags  = pr.get("security_flags", {})
         active = [k for k, v in flags.items() if v]
-        if active:
-            flagged_files.append({"filepath": pr["filepath"], "flags": active})
+        if not active:
+            continue
+
+        filepath = pr["filepath"]
+        entry: dict = {
+            "filepath":  filepath,
+            "flags":     active,
+        }
+
+        # Attach actual function source code if available
+        source = source_files.get(filepath, "")
+        if source and pr.get("functions"):
+            entry["functions"] = _extract_function_snippets(
+                source, pr["functions"]
+            )
+        else:
+            # At minimum give function signatures
+            entry["functions"] = [
+                {"name": f.get("name"), "args": f.get("args", []),
+                 "line_start": f.get("line_start")}
+                for f in pr.get("functions", [])[:5]
+            ]
+
+        flagged_files.append(entry)
 
     context = f"""
 You are a senior application security engineer performing a static
@@ -339,8 +392,8 @@ vulnerability report.
 === SEMGREP FINDINGS ({len(semgrep_findings)}) ===
 {json.dumps(semgrep_findings, indent=2)}
 
-=== AST SECURITY FLAGS ===
-{json.dumps(flagged_files, indent=2)}
+=== AST SECURITY FLAGS (with source code) ===
+{json.dumps(flagged_files, indent=2, default=str)}
 
 === CALL GRAPH HOTSPOTS ===
 {json.dumps(call_graph.get("hotspots", []), indent=2)}
@@ -355,8 +408,12 @@ For each finding provide:
 4. filepath + line_start
 5. code_snippet: the vulnerable code
 6. exploitability: is it actually exploitable given the call graph context?
-7. fix: specific code fix recommendation
-8. cwe: relevant CWE ID if applicable
+7. confidence: HIGH / MEDIUM / LOW — with a brief reason
+   (e.g. "HIGH — confirmed by Semgrep rule match",
+         "MEDIUM — pattern detected but requires manual review",
+         "LOW — flagged by heuristic, may be false positive")
+8. fix: specific code fix recommendation
+9. cwe: relevant CWE ID if applicable
 
 Return ONLY a valid JSON object with this exact schema (no markdown fences):
 {{
@@ -369,6 +426,7 @@ Return ONLY a valid JSON object with this exact schema (no markdown fences):
       "line_start":     42,
       "code_snippet":   "cursor.execute('SELECT * FROM users WHERE id=' + user_id)",
       "exploitability": "HIGH — fetch_user() is called directly from the public API",
+      "confidence":     "HIGH — confirmed by Semgrep rule match and AST flag",
       "fix":            "Use parameterized queries: cursor.execute(..., (user_id,))",
       "cwe":            "CWE-89"
     }}
@@ -422,17 +480,60 @@ def _extract_response_text(content: object) -> str:
     return str(content)
 
 
+def _create_llm():
+    """Create the LLM client based on environment configuration.
+
+    Priority:
+      1. AWS Bedrock via Mantle (OPENAI_BASE_URL + OPENAI_API_KEY)
+      2. Gemini (GEMINI_API_KEY)
+    """
+    # --- Bedrock Mantle (OpenAI-compatible) ---
+    openai_base_url = os.environ.get("OPENAI_BASE_URL", "").strip().strip('"')
+    openai_api_key  = os.environ.get("OPENAI_API_KEY", "").strip()
+    bedrock_model   = os.environ.get("AWS_BEDROCK_MODEL_ID", "mistral.mistral-large-3-675b-instruct")
+
+    if openai_base_url and openai_api_key:
+        from langchain_openai import ChatOpenAI
+
+        logger.info(
+            f"[node_agent] using Bedrock Mantle: model={bedrock_model}, "
+            f"base_url={openai_base_url}"
+        )
+        return ChatOpenAI(
+            model=bedrock_model,
+            api_key=openai_api_key,
+            base_url=openai_base_url,
+            temperature=0,
+        )
+
+    # --- Gemini fallback ---
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    gemini_model = os.environ.get("GEMINI_MODEL_ID", "gemini-2.0-flash")
+
+    if gemini_key:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        logger.info(f"[node_agent] using Gemini: model={gemini_model}")
+        return ChatGoogleGenerativeAI(
+            model=gemini_model,
+            google_api_key=gemini_key,
+            temperature=0,
+        )
+
+    raise ValueError(
+        "No LLM configured. Set OPENAI_BASE_URL + OPENAI_API_KEY (Bedrock) "
+        "or GEMINI_API_KEY in backend/.env"
+    )
+
+
 def node_agent(state: ScanState) -> dict:
     logger.info("[node_agent] invoking LLM")
 
     try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        # gemini-2.0-flash-lite: separate quota bucket from flash/pro, generous free tier
-        llm      = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0)
+        llm      = _create_llm()
         context  = _build_agent_context(state)
         response = llm.invoke(context)
-        # Normalise to str — some models (Gemma, newer Gemini) return a list of parts
+        # Normalise to str — some models return a list of content parts
         raw_text  = _extract_response_text(response.content)
         agent_out = _parse_llm_json(raw_text)
         logger.info(
@@ -591,10 +692,10 @@ COMPILED_GRAPH = _graph.compile()
 logger.info("Orchestrator graph compiled successfully")
 
 # ---------------------------------------------------------------------------
-# Public API — run_scan()
+# Public API — start_scan()
 # ---------------------------------------------------------------------------
 
-async def run_scan(
+async def start_scan(
     repo_path: str,
     rules: str = "auto",
 ) -> AsyncGenerator[dict, None]:
@@ -603,7 +704,7 @@ async def run_scan(
     Designed to be consumed by a FastAPI SSE endpoint.
 
     Usage in FastAPI:
-        async for event in run_scan(repo_path):
+        async for event in start_scan(repo_path):
             yield f"data: {json.dumps(event)}\\n\\n"
 
     Args:
@@ -652,7 +753,7 @@ async def run_scan(
                             accumulated_progress.append(event)
                             yield event
     except Exception as exc:
-        logger.error(f"[run_scan] graph execution error: {exc}", exc_info=True)
+        logger.error(f"[start_scan] graph execution error: {exc}", exc_info=True)
         yield _event("error", f"Scan failed: {exc}", {"error": str(exc)})
 
     # Always yield the final report as the last event
@@ -684,7 +785,7 @@ if __name__ == "__main__":
     async def main() -> None:
         path = sys.argv[1] if len(sys.argv) > 1 else "."
         print(f"Scanning: {path}\n{'=' * 60}")
-        async for event in run_scan(path):
+        async for event in start_scan(path):
             print(json.dumps(event, indent=2, default=str))
 
     asyncio.run(main())

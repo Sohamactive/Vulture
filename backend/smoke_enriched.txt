@@ -1,0 +1,632 @@
+﻿uv : D:\Vulture\backend\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: 
+LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an 
+explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+At line:1 char:1
++ uv run python -m app.agents.orchestrator . 2>&1 | Out-File -FilePath  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\Vulture\back...s this warning.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+INFO  __main__  [node_read_files] repo_path=.
+INFO  app.code_parsing.file_reader  Scanning repository: D:\Vulture\backend
+INFO  app.code_parsing.file_reader  Scan complete. Found 37 files.
+INFO  __main__  [node_parse_files] starting
+INFO  __main__  [node_run_semgrep] starting
+INFO  app.code_parsing.semgrep_runner  Running semgrep: semgrep --json --quiet --timeout 30 --max-target-bytes 5000000 
+--no-git-ignore --exclude node_modules --exclude .venv --exclude __pycache__ --config auto .
+INFO  app.code_parsing.semgrep_runner  semgrep complete: 5 raw findings, 5 returned ù E:3 W:2 I:0
+INFO  __main__  [node_build_call_graph] starting
+INFO  app.code_parsing.call_graph  call_graph built: 35 files, 140 symbols, 884 call edges (178 resolved, 20.1% rate), 
+1 circular import(s)
+INFO  __main__  [node_check_findings] evaluating
+INFO  __main__  [node_check_findings] verdict=findings
+INFO  __main__  [node_agent] invoking LLM
+INFO  __main__  [node_agent] using Bedrock Mantle: model=mistral.mistral-large-3-675b-instruct, 
+base_url=https://bedrock-mantle.ap-south-1.api.aws/v1
+INFO  httpx  HTTP Request: POST https://bedrock-mantle.ap-south-1.api.aws/v1/chat/completions "HTTP/1.1 200 OK"
+INFO  __main__  [node_agent] LLM returned 6 findings
+INFO  __main__  [node_clean_report] assembling final report
+Scanning: .
+============================================================
+{
+  "stage": "file_reader",
+  "message": "Reading codebase...",
+  "data": {
+    "path": "."
+  },
+  "timestamp": "2026-05-07T23:03:45.895638+00:00"
+}
+{
+  "stage": "file_reader",
+  "message": "Found 37 files",
+  "data": {
+    "total_files": 37,
+    "languages": [
+      "python"
+    ]
+  },
+  "timestamp": "2026-05-07T23:03:45.895638+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsing 37 source files...",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.897675+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed main.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.898203+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/logger.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.898203+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.898203+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/agents/orchestrator.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.908238+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/agents/vuln_agent.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.908238+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/agents/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.908238+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/auth.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.908238+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/connectivity.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.909822+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/dependencies.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.910392+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/reports.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.911985+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/repos.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.911985+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/routes.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.911985+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/scans.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.915290+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/schemas.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.915290+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/ws.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.916422+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/api/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.916422+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/ast_parser.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.921263+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/call_graph.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.925992+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/chunk_extractor.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.925992+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/file_reader.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.928706+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/semgrep_runner.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.930215+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/treesitter_parser.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.939334+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/code_parsing/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.939334+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/export/report_generator.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/export/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/prompts/vuln_prompts.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/prompts/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/rag/embedder.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/rag/retriever.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/rag/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/storage/db.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/storage/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.940441+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/tools/bedrock_client.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.941442+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/tools/tool_registry.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.941442+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed app/tools/__init__.py",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:45.941442+00:00"
+}
+{
+  "stage": "ast_parser",
+  "message": "Parsed 35 files",
+  "data": {
+    "parsed": 35,
+    "errors": 0
+  },
+  "timestamp": "2026-05-07T23:03:45.941442+00:00"
+}
+{
+  "stage": "semgrep",
+  "message": "Running security scan...",
+  "data": {
+    "rules": "auto"
+  },
+  "timestamp": "2026-05-07T23:03:56.061428+00:00"
+}
+{
+  "stage": "semgrep",
+  "message": "Semgrep complete",
+  "data": {
+    "findings": 5,
+    "errors": 3,
+    "warnings": 2
+  },
+  "timestamp": "2026-05-07T23:03:56.061428+00:00"
+}
+{
+  "stage": "call_graph",
+  "message": "Building call graph...",
+  "data": {},
+  "timestamp": "2026-05-07T23:03:56.066316+00:00"
+}
+{
+  "stage": "call_graph",
+  "message": "Call graph ready",
+  "data": {
+    "symbols": 140,
+    "resolution_rate": "20.1%",
+    "circular_imports": 1
+  },
+  "timestamp": "2026-05-07T23:03:56.066316+00:00"
+}
+{
+  "stage": "check_findings",
+  "message": "Findings check complete",
+  "data": {
+    "has_semgrep": true,
+    "has_ast_flags": true,
+    "verdict": "findings"
+  },
+  "timestamp": "2026-05-07T23:03:56.068841+00:00"
+}
+{
+  "stage": "agent",
+  "message": "LLM agent reasoning...",
+  "data": {},
+  "timestamp": "2026-05-07T23:04:03.961102+00:00"
+}
+{
+  "stage": "agent",
+  "message": "Analysis complete",
+  "data": {
+    "findings": 6
+  },
+  "timestamp": "2026-05-07T23:04:03.961102+00:00"
+}
+{
+  "stage": "complete",
+  "message": "Scan finished",
+  "data": {
+    "scan_id": "ccad2dee-6e0e-40a1-9e2c-7eda6002a94c",
+    "total_findings": 6,
+    "risk_score": 8.2
+  },
+  "timestamp": "2026-05-07T23:04:03.962126+00:00"
+}
+{
+  "stage": "final_report",
+  "report": {
+    "scan_id": "ccad2dee-6e0e-40a1-9e2c-7eda6002a94c",
+    "repo_path": ".",
+    "scanned_at": "2026-05-07T23:04:03.962126+00:00",
+    "stats": {
+      "total_files": 37,
+      "languages": [
+        "python"
+      ],
+      "total_findings": 6,
+      "by_severity": {
+        "CRITICAL": 2,
+        "HIGH": 0,
+        "MEDIUM": 2,
+        "LOW": 2
+      }
+    },
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "title": "Hardcoded AWS Access Key ID and Secret Access Key",
+        "description": "AWS Access Key ID and Secret Access Key are hardcoded in the .env file. This exposes sensitive credentials that could be used to gain unauthorized access to AWS services.",
+        "filepath": ".env",
+        "line_start": 22,
+        "code_snippet": "AWS_ACCESS_KEY_ID=hardcoded_value",
+        "exploitability": "HIGH \u2014 If the .env file is exposed or committed to version control, attackers can immediately use these credentials.",
+        "confidence": "HIGH \u2014 Confirmed by Semgrep rule match for hardcoded credentials.",
+        "fix": "Remove the hardcoded credentials from the .env file and use AWS Secrets Manager or environment variables injected at runtime via a secure secrets management system.",
+        "cwe": "CWE-798"
+      },
+      {
+        "severity": "CRITICAL",
+        "title": "Hardcoded Generic API Key",
+        "description": "A generic API key is hardcoded in the .env file. This key could be used to access sensitive services or APIs without authorization.",
+        "filepath": ".env",
+        "line_start": 26,
+        "code_snippet": "GENERIC_API_KEY=hardcoded_value",
+        "exploitability": "HIGH \u2014 If the .env file is exposed, attackers can use this key to access restricted APIs or services.",
+        "confidence": "HIGH \u2014 Confirmed by Semgrep rule match for hardcoded credentials.",
+        "fix": "Remove the hardcoded API key from the .env file and use a secure secrets management system to inject the key at runtime.",
+        "cwe": "CWE-798"
+      },
+      {
+        "severity": "MEDIUM",
+        "title": "Dynamic URL Handling with urllib",
+        "description": "The use of dynamic values with urllib can lead to arbitrary file reads if the URL is controlled by a malicious actor. This could result in unauthorized access to sensitive files on the server.",
+        "filepath": "app\\api\\repos.py",
+        "line_start": 22,
+        "code_snippet": "urlopen(request)",
+        "exploitability": "MEDIUM \u2014 Requires user-controlled input to exploit, but the call graph shows this function is used in fetching GitHub repos, which may involve user input.",
+        "confidence": "MEDIUM \u2014 Pattern detected but requires manual review to confirm exploitability.",
+        "fix": "Use the 'requests' library instead of urllib and validate all URLs to ensure they do not use 'file://' schemes. Implement allowlisting for URLs.",
+        "cwe": "CWE-939"
+      },
+      {
+        "severity": "MEDIUM",
+        "title": "Permissive CORS Policy",
+        "description": "The CORS policy allows any origin (using wildcard '*'). This is insecure as it permits requests from any domain, increasing the risk of cross-site request forgery (CSRF) and data leakage.",
+        "filepath": "main.py",
+        "line_start": 19,
+        "code_snippet": "CORS policy configuration using wildcard '*'",
+        "exploitability": "MEDIUM \u2014 Attackers can exploit this to make unauthorized cross-origin requests if other security controls (e.g., CSRF tokens) are not in place.",
+        "confidence": "MEDIUM \u2014 Confirmed by Semgrep rule match, but exploitability depends on other factors like authentication.",
+        "fix": "Restrict the CORS policy to specific trusted domains instead of using a wildcard. Example: `CORS(app, resources={r\"/*\": {\"origins\": [\"https://trusteddomain.com\"]}})`",
+        "cwe": "CWE-942"
+      },
+      {
+        "severity": "LOW",
+        "title": "Potential SQL Injection via String Concatenation",
+        "description": "The codebase contains flags for SQL string usage (`has_sql_string`), indicating potential SQL injection vulnerabilities. However, no direct evidence of unsafe SQL string concatenation was found in the provided snippets.",
+        "filepath": "app/agents/orchestrator.py, app/api/repos.py, app/code_parsing/ast_parser.py, app/code_parsing/treesitter_parser.py",
+        "line_start": "Multiple (see flags)",
+        "code_snippet": "Flags indicate potential SQL string usage but no direct vulnerable code snippet provided.",
+        "exploitability": "LOW \u2014 No direct evidence of exploitability in the provided code snippets, but manual review is required to confirm.",
+        "confidence": "LOW \u2014 Flagged by heuristic (AST flags), may be a false positive.",
+        "fix": "Review all SQL queries in the flagged files to ensure parameterized queries are used. Replace any string concatenation with prepared statements or ORM queries.",
+        "cwe": "CWE-89"
+      },
+      {
+        "severity": "LOW",
+        "title": "Use of Subprocess for Semgrep Execution",
+        "description": "The `semgrep_runner.py` file uses `subprocess.run` to execute Semgrep. If the command arguments are not properly sanitized, this could lead to command injection vulnerabilities.",
+        "filepath": "app/code_parsing/semgrep_runner.py",
+        "line_start": 63,
+        "code_snippet": "subprocess.run(cmd, capture_output=True, text=True)",
+        "exploitability": "LOW \u2014 The command arguments appear to be hardcoded, but manual review is required to ensure no user input is passed to the subprocess.",
+        "confidence": "LOW \u2014 Flagged by AST flag (`uses_subprocess`), but no direct evidence of exploitability.",
+        "fix": "Ensure all subprocess commands are hardcoded and do not include user-controlled input. If dynamic input is necessary, use allowlists or strict validation.",
+        "cwe": "CWE-78"
+      }
+    ],
+    "semgrep_raw": {
+      "tool": "semgrep",
+      "target": ".",
+      "rules_used": "auto",
+      "semgrep_available": true,
+      "run_error": null,
+      "findings": [
+        {
+          "rule_id": "generic.secrets.security.detected-aws-access-key-id-value.detected-aws-access-key-id-value",
+          "rule_name": "detected-aws-access-key-id-value",
+          "severity": "ERROR",
+          "category": "security",
+          "message": "AWS Access Key ID Value detected. This is a sensitive credential and should not be hardcoded here. Instead, read this value from an environment variable or keep it in a separate, private file.",
+          "filepath": ".env",
+          "line_start": 22,
+          "line_end": 22,
+          "code_snippet": "requires login",
+          "cwe": [
+            "CWE-798: Use of Hard-coded Credentials"
+          ],
+          "owasp": [
+            "A07:2021 - Identification and Authentication Failures",
+            "A07:2025 - Authentication Failures"
+          ],
+          "fix": "",
+          "confidence": "LOW"
+        },
+        {
+          "rule_id": "generic.secrets.security.detected-aws-secret-access-key.detected-aws-secret-access-key",
+          "rule_name": "detected-aws-secret-access-key",
+          "severity": "ERROR",
+          "category": "security",
+          "message": "AWS Secret Access Key detected",
+          "filepath": ".env",
+          "line_start": 23,
+          "line_end": 23,
+          "code_snippet": "requires login",
+          "cwe": [
+            "CWE-798: Use of Hard-coded Credentials"
+          ],
+          "owasp": [
+            "A07:2021 - Identification and Authentication Failures",
+            "A07:2025 - Authentication Failures"
+          ],
+          "fix": "",
+          "confidence": "LOW"
+        },
+        {
+          "rule_id": "generic.secrets.security.detected-generic-api-key.detected-generic-api-key",
+          "rule_name": "detected-generic-api-key",
+          "severity": "ERROR",
+          "category": "security",
+          "message": "Generic API Key detected",
+          "filepath": ".env",
+          "line_start": 26,
+          "line_end": 26,
+          "code_snippet": "requires login",
+          "cwe": [
+            "CWE-798: Use of Hard-coded Credentials"
+          ],
+          "owasp": [
+            "A07:2021 - Identification and Authentication Failures",
+            "A07:2025 - Authentication Failures"
+          ],
+          "fix": "",
+          "confidence": "LOW"
+        },
+        {
+          "rule_id": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+          "rule_name": "dynamic-urllib-use-detected",
+          "severity": "WARNING",
+          "category": "security",
+          "message": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead.",
+          "filepath": "app\\api\\repos.py",
+          "line_start": 22,
+          "line_end": 22,
+          "code_snippet": "requires login",
+          "cwe": [
+            "CWE-939: Improper Authorization in Handler for Custom URL Scheme"
+          ],
+          "owasp": [
+            "A01:2017 - Injection"
+          ],
+          "fix": "",
+          "confidence": "LOW"
+        },
+        {
+          "rule_id": "python.fastapi.security.wildcard-cors.wildcard-cors",
+          "rule_name": "wildcard-cors",
+          "severity": "WARNING",
+          "category": "security",
+          "message": "CORS policy allows any origin (using wildcard '*'). This is insecure and should be avoided.",
+          "filepath": "main.py",
+          "line_start": 19,
+          "line_end": 19,
+          "code_snippet": "requires login",
+          "cwe": [
+            "CWE-942: Permissive Cross-domain Policy with Untrusted Domains"
+          ],
+          "owasp": [
+            "A05:2021 - Security Misconfiguration",
+            "A02:2025 - Security Misconfiguration"
+          ],
+          "fix": "",
+          "confidence": "MEDIUM"
+        }
+      ],
+      "severity_summary": {
+        "ERROR": 3,
+        "WARNING": 2,
+        "INFO": 0
+      },
+      "semgrep_errors": [],
+      "stats": {
+        "total_findings": 5,
+        "returned_findings": 5,
+        "files_scanned": 0,
+        "rules_run": 0,
+        "scan_time_seconds": 0.0
+      }
+    },
+    "call_graph_summary": {
+      "hotspots": [
+        {
+          "filepath": "app/api/repos.py",
+          "in_degree": 8,
+          "defined_symbols": [
+            "_fetch_github_repos",
+            "list_repos"
+          ]
+        },
+        {
+          "filepath": "app/logger.py",
+          "in_degree": 6,
+          "defined_symbols": [
+            "get_logger"
+          ]
+        },
+        {
+          "filepath": "app/api/schemas.py",
+          "in_degree": 5,
+          "defined_symbols": [
+            "ApiResponse",
+            "ConnectivityRequest",
+            "ErrorDetail",
+            "RepoSummary",
+            "ScanCreateRequest",
+            "ScanReport",
+            "ScanSummary",
+            "VulnerabilitySummary"
+          ]
+        },
+        {
+          "filepath": "app/api/dependencies.py",
+          "in_degree": 4,
+          "defined_symbols": [
+            "ClerkJWTBearer",
+            "ClerkJWTBearer.__call__",
+            "ClerkUser",
+            "__call__",
+            "_decode_clerk_token",
+            "_extract_github_token",
+            "_get_jwks_client",
+            "_get_jwks_url",
+            "get_current_user",
+            "get_github_token"
+          ]
+        },
+        {
+          "filepath": "app/api/scans.py",
+          "in_degree": 2,
+          "defined_symbols": [
+            "_run_scan",
+            "create_scan",
+            "get_scan",
+            "rerun_scan",
+            "scan_history"
+          ]
+        }
+      ],
+      "circular_imports": [
+        [
+          "app/api/dependencies.py",
+          "app/api/repos.py",
+          "app/api/dependencies.py"
+        ]
+      ],
+      "resolution_rate": 0.20135746606334842,
+      "total_symbols": 140
+    },
+    "summary": "Found 2 critical, 2 medium, and 2 low vulnerabilities. The most severe issues involve hardcoded credentials, which pose an immediate risk if exposed.",
+    "risk_score": 8.2,
+    "most_vulnerable_file": ".env",
+    "scan_error": null
+  }
+}
