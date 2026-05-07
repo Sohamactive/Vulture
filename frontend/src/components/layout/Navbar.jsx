@@ -15,7 +15,7 @@ export default function Navbar() {
             <Link to="/" className="flex items-center gap-2 text-[var(--cyan)] hover:text-[var(--cyan-dim)] transition-colors">
               <Terminal size={24} />
               <span className="font-bold text-xl tracking-wider">
-                <GlitchText text="VulnBot" />
+                <GlitchText text="VultureAI" />
               </span>
             </Link>
           </div>

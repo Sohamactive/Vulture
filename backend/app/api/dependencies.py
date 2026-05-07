@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.requests import Request
 from pydantic import BaseModel
 
 
@@ -74,7 +75,7 @@ def _extract_github_token(claims: Dict[str, Any]) -> Optional[str]:
 
 
 class ClerkJWTBearer(HTTPBearer):
-    async def __call__(self, request) -> Dict[str, Any]:
+    async def __call__(self, request: Request) -> Dict[str, Any]:
         credentials: HTTPAuthorizationCredentials = await super().__call__(request)
         if not credentials or credentials.scheme.lower() != "bearer":
             raise HTTPException(
