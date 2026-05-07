@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Clock, CheckCircle, Cpu, Lock, ArrowRight, GitBranch } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react';
-import ThreatGlobe from '../components/3d/ThreatGlobe';
+import VantaFog from '../components/ui/VantaFog';
 import FloatingTerminal from '../components/ui/FloatingTerminal';
 import { useScanStore } from '../store/scanStore';
 import ScanProgress from '../components/upload/ScanProgress';
@@ -78,9 +78,17 @@ export default function Landing() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[var(--bg-primary)]">
       
-      {/* Massive 3D Backdrop */}
-      <div className="absolute right-[-40%] top-[-20%] w-[120%] h-[140%] opacity-60 pointer-events-none z-0">
-        <ThreatGlobe />
+      {/* Vanta.js Fog Backdrop */}
+      <VantaFog />
+
+      {/* Hero Background Image — bright, layered over fog */}
+      <div className="fixed inset-0 w-full h-full z-[1] pointer-events-none" style={{ mixBlendMode: 'screen' }}>
+        <img 
+          src="/hero-bg.png" 
+          alt="" 
+          className="w-full h-full object-cover object-center"
+          style={{ opacity: 1, filter: 'brightness(1.3) saturate(1.4)' }}
+        />
       </div>
 
       {/* Hero Section */}
