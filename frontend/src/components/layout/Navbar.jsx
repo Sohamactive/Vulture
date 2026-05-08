@@ -1,11 +1,37 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import GlitchText from '../ui/GlitchText';
-import { Terminal, FileDown, ExternalLink } from 'lucide-react';
+import { Terminal, FileDown, ExternalLink, LayoutDashboard } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
+import { useAuthToken } from '../../lib/useAuthToken';
+import { exportReport } from '../../lib/api';
 
 export default function Navbar() {
   const location = useLocation();
   const isReportPage = location.pathname.includes('/report');
+  const isDashboardPage = location.pathname === '/dashboard';
+  const { getToken } = useAuthToken();
+
+  // Extract scanId from report URL for export
+  const scanIdMatch = location.pathname.match(/\/report\/(.+)/);
+  const currentScanId = scanIdMatch ? scanIdMatch[1] : null;
+
+  const handleExport = async () => {
+    if (!currentScanId) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const data = await exportReport(token, currentScanId, 'json');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vulture-report-${currentScanId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   return (
     <nav className="w-full border-b border-solid border-[var(--border)] bg-[var(--bg-surface)] bg-opacity-80 backdrop-blur-sm fixed top-0 z-50">
@@ -21,21 +47,34 @@ export default function Navbar() {
           </div>
           
           <div className="flex items-center gap-6">
-            {!isReportPage ? (
+            {isReportPage ? (
+              <>
+                <button
+                  onClick={handleExport}
+                  className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
+                >
+                  <FileDown size={16} /> Export JSON
+                </button>
+              </>
+            ) : (
               <>
                 <a href="#docs" className="text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">Docs</a>
                 <a href="#api" className="text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">API</a>
               </>
-            ) : (
-              <>
-                <button className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">
-                  <FileDown size={16} /> Export PDF
-                </button>
-                <button className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">
-                  <ExternalLink size={16} /> Open Jira
-                </button>
-              </>
             )}
+
+            <SignedIn>
+              <Link
+                to="/dashboard"
+                className={`flex items-center gap-2 text-sm font-bold tracking-wider transition-colors uppercase ${
+                  isDashboardPage
+                    ? 'text-[var(--cyan)]'
+                    : 'text-[var(--text-dim)] hover:text-[var(--cyan)]'
+                }`}
+              >
+                <LayoutDashboard size={16} /> Dashboard
+              </Link>
+            </SignedIn>
 
             <div className="h-6 w-px bg-[var(--border)] mx-2"></div>
 

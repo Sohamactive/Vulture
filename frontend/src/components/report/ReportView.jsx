@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import ReportCard from './ReportCard';
 import SeverityDonut from './SeverityDonut';
@@ -6,85 +6,45 @@ import OWASPRadar from './OWASPRadar';
 import IssueList from './IssueList';
 import GlitchText from '../ui/GlitchText';
 import { useScanStore } from '../../store/scanStore';
+import { getReport } from '../../lib/api';
+import { useAuthToken } from '../../lib/useAuthToken';
+import { mapReport } from '../../lib/reportMapper';
 
 export default function ReportView({ scanId = 'demo-123' }) {
-  const { report } = useScanStore();
-  const [mockReport, setMockReport] = useState(null);
+  const { report, setReport } = useScanStore();
+  const { getToken } = useAuthToken();
 
   useEffect(() => {
-    // If no real report is in store, generate a mock one for demonstration
-    if (!report) {
-      setMockReport({
-        scan_id: scanId,
-        summary: { critical: 3, high: 7, medium: 12, low: 24 },
-        owasp_scores: {
-          'A01': 8, 'A02': 4, 'A03': 9, 'A04': 2, 'A05': 6,
-          'A06': 5, 'A07': 3, 'A08': 1, 'A09': 7, 'A10': 2
-        },
-        issues: [
-          {
-            id: 'vuln-1',
-            severity: 'critical',
-            title: 'SQL Injection in User Authentication',
-            description: 'The application is vulnerable to SQL injection because user input is concatenated directly into the database query without sanitization or parameterization.',
-            owasp_category: 'A03 Injection',
-            cve_id: 'CVE-2024-1337',
-            cwe_id: 'CWE-89',
-            cvss_score: 9.8,
-            file: 'src/api/auth/login.js',
-            line: 42,
-            code_snippet: "const query = `SELECT * FROM users WHERE username = '${req.body.username}' AND password = '${req.body.password}'`;\ndb.execute(query);",
-            remediation: [
-              'Use parameterized queries or prepared statements.',
-              'Implement an ORM (Object-Relational Mapping) library.',
-              'Validate and sanitize all user input before processing.'
-            ]
-          },
-          {
-            id: 'vuln-2',
-            severity: 'critical',
-            title: 'Hardcoded AWS Secret Key',
-            description: 'A sensitive AWS access key and secret key are hardcoded directly into the application source code, exposing infrastructure to unauthorized access.',
-            owasp_category: 'A05 Misconfiguration',
-            cve_id: null,
-            cwe_id: 'CWE-798',
-            cvss_score: 9.1,
-            file: 'src/config/aws.js',
-            line: 12,
-            code_snippet: 'export const awsConfig = {\n  accessKeyId: "AKIAIOSFODNN7EXAMPLE",\n  secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",\n  region: "us-east-1"\n};',
-            remediation: [
-              'Remove the credentials from the source code immediately.',
-              'Rotate the compromised AWS keys in the AWS Management Console.',
-              'Load sensitive credentials from environment variables (`process.env.AWS_ACCESS_KEY_ID`).',
-              'Ensure `.env` files are added to `.gitignore`.'
-            ]
-          },
-          {
-            id: 'vuln-3',
-            severity: 'high',
-            title: 'Cross-Site Scripting (XSS)',
-            description: 'User profile bio is rendered to the DOM without HTML encoding, allowing execution of arbitrary JavaScript in the context of other users viewing the profile.',
-            owasp_category: 'A03 Injection',
-            cve_id: null,
-            cwe_id: 'CWE-79',
-            cvss_score: 8.2,
-            file: 'src/components/Profile.jsx',
-            line: 87,
-            code_snippet: '<div className="bio-content" dangerouslySetInnerHTML={{ __html: user.bio }} />',
-            remediation: [
-              'Remove `dangerouslySetInnerHTML` if possible.',
-              'If HTML rendering is required, sanitize the input using a library like `DOMPurify` before rendering.'
-            ]
-          }
-        ]
-      });
-    }
-  }, [report, scanId]);
+    if (!scanId || report?.scan_id === scanId) return;
 
-  const activeReport = report || mockReport;
+    let cancelled = false;
+
+    (async () => {
+      const token = await getToken();
+      if (!token || cancelled) return;
+
+      try {
+        const data = await getReport(token, scanId);
+        if (!cancelled) setReport(mapReport(data));
+      } catch (err) {
+        console.error('Failed to fetch report:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [scanId, report, setReport, getToken]);
+
+  const activeReport = report;
 
   if (!activeReport) {
-    return <div className="min-h-screen flex items-center justify-center font-mono">Loading report data...</div>;
+    return (
+      <div className="min-h-[400px] flex items-center justify-center font-mono">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[var(--cyan)] border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-[var(--text-dim)]">Loading report data...</span>
+        </div>
+      </div>
+    );
   }
 
   return (

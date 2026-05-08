@@ -49,18 +49,18 @@ def _create_llm():
 		"mistral.mistral-large-3-675b-instruct",
 	)
 
+	print(f"[AI MODEL] Creating LLM: model={bedrock_model}, base_url={openai_base_url}")
+	print(f"[AI MODEL] API key set: {bool(openai_api_key)}, Base URL set: {bool(openai_base_url)}")
+
 	if not openai_base_url or not openai_api_key:
+		print("[AI MODEL] ❌ Bedrock not configured!")
 		raise ValueError(
 			"Bedrock not configured. Set OPENAI_BASE_URL and OPENAI_API_KEY in backend/.env"
 		)
 
 	from langchain_openai import ChatOpenAI
 
-	logger.info(
-		"[vuln_agent] using Bedrock Mantle: model=%s, base_url=%s",
-		bedrock_model,
-		openai_base_url,
-	)
+	print(f"[AI MODEL] ✓ LLM client created successfully")
 	return ChatOpenAI(
 		model=bedrock_model,
 		api_key=openai_api_key,
@@ -70,10 +70,18 @@ def _create_llm():
 
 
 def run_vuln_agent(state: dict) -> dict[str, Any]:
+	print("[AI MODEL] ▶ run_vuln_agent called — invoking LLM...")
 	logger.info("[vuln_agent] invoking LLM")
 
 	llm = _create_llm()
 	messages = build_vuln_agent_messages(state)
+	print(f"[AI MODEL] Sending {len(messages)} messages to LLM")
+
 	response = llm.invoke(messages)
 	raw_text = _extract_response_text(response.content)
-	return _parse_llm_json(raw_text)
+	print(f"[AI MODEL] ✓ LLM response received — {len(raw_text)} chars")
+
+	result = _parse_llm_json(raw_text)
+	findings_count = len(result.get("findings", []))
+	print(f"[AI MODEL] ✓ Parsed {findings_count} findings from LLM response")
+	return result

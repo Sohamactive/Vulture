@@ -1,5 +1,10 @@
+import asyncio
+import os
+import shutil
+import subprocess
+import tempfile
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from starlette.concurrency import run_in_threadpool
@@ -13,38 +18,153 @@ from app.storage.db import AsyncSessionLocal, get_db
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 
-async def _run_scan(scan_id: str, payload: ScanCreateRequest, user_id: str) -> None:
-    async with AsyncSessionLocal() as session:
-        await crud.update_scan_status(session, scan_id, user_id, status="cloning")
+def _clone_repo(repo_url: str, branch: str, dest: str) -> None:
+    """Clone a git repository into dest directory."""
+    cmd = [
+        "git", "clone",
+        "--depth", "1",
+        "--branch", branch,
+        "--single-branch",
+        repo_url,
+        dest,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        # Try without --branch (some repos use main vs master)
+        cmd_fallback = [
+            "git", "clone",
+            "--depth", "1",
+            repo_url,
+            dest,
+        ]
+        result = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
 
-    await run_in_threadpool(
-        start_scan,
-        scan_id=scan_id,
-        repo_url=payload.repo_url,
-        branch=payload.branch,
-        user_id=user_id,
+
+def _map_finding_to_vuln(finding: dict, scan_id: str) -> VulnerabilitySummary:
+    """Map a single finding from the orchestrator report to a VulnerabilitySummary."""
+    severity = str(finding.get("severity", "low")).lower()
+    # Normalize severity values
+    if severity not in ("critical", "high", "medium", "low", "info"):
+        severity = "medium"
+
+    # Normalize remediation: orchestrator may return str or list
+    raw_remediation = finding.get("remediation") or finding.get("fix")
+    if isinstance(raw_remediation, str):
+        remediation = [raw_remediation]
+    elif isinstance(raw_remediation, list):
+        remediation = raw_remediation
+    else:
+        remediation = None
+
+    return VulnerabilitySummary(
+        id=finding.get("id") or str(uuid.uuid4()),
+        title=finding.get("title") or finding.get("rule_id") or "Untitled Finding",
+        severity=severity,
+        detection_source=finding.get("detection_source") or finding.get("source") or "ai",
+        owasp_category=finding.get("owasp_category"),
+        cwe_id=finding.get("cwe_id") or finding.get("cwe"),
+        file_path=finding.get("file_path") or finding.get("file"),
+        line_start=finding.get("line_start") or finding.get("line"),
+        line_end=finding.get("line_end"),
+        code_snippet=finding.get("code_snippet") or finding.get("snippet"),
+        description=finding.get("description"),
+        remediation=remediation,
     )
 
-    summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-    issues: List[VulnerabilitySummary] = []
 
-    async with AsyncSessionLocal() as session:
-        await crud.update_scan_status(
-            session,
-            scan_id,
-            user_id,
-            status="completed",
-            security_score=100,
-            summary=summary,
-        )
-        await crud.replace_scan_report(
-            session,
-            scan_id,
-            user_id,
-            summary=summary,
-            security_score=100,
-            issues=issues,
-        )
+async def _run_scan(scan_id: str, payload: ScanCreateRequest, user_id: str) -> None:
+    tmp_dir = None
+    try:
+        # --- Stage 1: Cloning ---
+        async with AsyncSessionLocal() as session:
+            await crud.update_scan_status(session, scan_id, user_id, status="cloning")
+
+        tmp_dir = tempfile.mkdtemp(prefix=f"vulture_{scan_id[:8]}_")
+        repo_dir = os.path.join(tmp_dir, "repo")
+
+        await run_in_threadpool(_clone_repo, payload.repo_url, payload.branch, repo_dir)
+
+        # --- Stage 2: Semgrep scanning ---
+        async with AsyncSessionLocal() as session:
+            await crud.update_scan_status(session, scan_id, user_id, status="semgrep_scanning")
+
+        # --- Stage 3+4: Parsing + Analyzing via orchestrator ---
+        async with AsyncSessionLocal() as session:
+            await crud.update_scan_status(session, scan_id, user_id, status="parsing")
+
+        # Run the orchestrator pipeline
+        final_report = {}
+        last_stage = "init"
+
+        async for event in start_scan(repo_path=repo_dir, rules="auto"):
+            stage = event.get("stage", "")
+
+            # Track stage transitions for DB status updates
+            if stage == "ast_parser" and last_stage != "parsing":
+                last_stage = "parsing"
+            elif stage == "agent" and last_stage != "analyzing":
+                last_stage = "analyzing"
+                async with AsyncSessionLocal() as session:
+                    await crud.update_scan_status(session, scan_id, user_id, status="analyzing")
+
+            # Capture the final report
+            if stage == "final_report":
+                final_report = event.get("report", {})
+
+        # --- Stage 5: Process results ---
+        findings = final_report.get("findings", [])
+        issues: List[VulnerabilitySummary] = [
+            _map_finding_to_vuln(f, scan_id) for f in findings
+        ]
+
+        # Build severity summary from actual findings
+        summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for issue in issues:
+            sev = issue.severity.lower()
+            if sev in summary:
+                summary[sev] += 1
+
+        # Compute security score from risk_score (0.0 - 10.0 → 100 - 0)
+        risk_score = float(final_report.get("risk_score", 0.0))
+        security_score = max(0, min(100, int(100 - (risk_score * 10))))
+
+        # Persist results
+        async with AsyncSessionLocal() as session:
+            await crud.update_scan_status(
+                session,
+                scan_id,
+                user_id,
+                status="completed",
+                security_score=security_score,
+                summary=summary,
+            )
+            await crud.replace_scan_report(
+                session,
+                scan_id,
+                user_id,
+                summary=summary,
+                security_score=security_score,
+                issues=issues,
+            )
+
+    except Exception as exc:
+        # Mark scan as failed
+        try:
+            async with AsyncSessionLocal() as session:
+                await crud.update_scan_status(
+                    session, scan_id, user_id, status="failed"
+                )
+        except Exception:
+            pass
+        # Re-raise so BackgroundTasks logs the exception
+        raise
+
+    finally:
+        # Clean up temp directory
+        if tmp_dir and os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @router.post("", response_model=ApiResponse, status_code=status.HTTP_202_ACCEPTED)

@@ -34,8 +34,10 @@ export function mapReport(apiReport) {
       cwe_id: issue.cwe_id || null,
       file: issue.file_path || 'unknown',
       line: issue.line_start || null,
+      line_end: issue.line_end || null,
       code_snippet: issue.code_snippet || '',
-      remediation: issue.remediation || []
+      remediation: issue.remediation || [],
+      detection_source: issue.detection_source || null
     }
   })
 
