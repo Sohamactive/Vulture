@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+import re
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
@@ -58,6 +59,19 @@ TREESITTER_EXTENSIONS: frozenset[str] = frozenset({
     ".c", ".cpp", ".h",
 })
 
+ALLOWED_OWASP_CATEGORIES: dict[str, str] = {
+    "A01": "A01:Access Control",
+    "A02": "A02:Crypto",
+    "A03": "A03:Injection",
+    "A04": "A04:Design",
+    "A05": "A05:Config",
+    "A06": "A06:Outdated",
+    "A07": "A07:Auth",
+    "A08": "A08:Integrity",
+    "A09": "A09:Logging",
+    "A10": "A10:SSRF",
+}
+
 # ---------------------------------------------------------------------------
 # ScanState
 # ---------------------------------------------------------------------------
@@ -84,6 +98,7 @@ class ScanState(TypedDict):
     progress:        list[dict]   # accumulated by all other nodes
     current_stage:   str
     scan_error:      str | None
+    scan_started_at: float
 
 # ---------------------------------------------------------------------------
 # Progress helper
@@ -96,6 +111,208 @@ def _event(stage: str, message: str, data: dict | None = None) -> dict:
         "data":      data or {},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        if match:
+            return int(match.group(0))
+    return None
+
+
+def _canonical_owasp(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    candidates: list[str] = []
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = [str(v) for v in value if v is not None]
+    else:
+        candidates = [str(value)]
+
+    for raw in candidates:
+        match = re.search(r"\bA(0[1-9]|10)\b", raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        key = f"A{match.group(1)}".upper()
+        mapped = ALLOWED_OWASP_CATEGORIES.get(key)
+        if mapped:
+            return mapped
+
+    return None
+
+
+def _normalize_cwe(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        for item in value:
+            normalized = _normalize_cwe(item)
+            if normalized:
+                return normalized
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"(CWE-\d+)", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    if text.isdigit():
+        return f"CWE-{text}"
+    return text
+
+
+def _infer_owasp_from_text(text: str) -> str | None:
+    lowered = text.lower()
+    keyword_map = [
+        ("A03", ("sql injection", "command injection", "xss", "injection")),
+        ("A10", ("ssrf", "server-side request forgery")),
+        ("A01", ("authorization", "access control", "privilege escalation", "idor")),
+        ("A07", ("authentication", "auth bypass", "session fixation", "token")),
+        ("A02", ("crypto", "encryption", "hardcoded key", "tls")),
+        ("A05", ("cors", "misconfiguration", "exposed config", "security headers")),
+        ("A06", ("outdated", "vulnerable dependency", "legacy package")),
+        ("A08", ("integrity", "deserialization", "supply chain", "tamper")),
+        ("A09", ("logging", "monitoring", "audit trail")),
+        ("A04", ("insecure design", "design flaw", "business logic")),
+    ]
+    for key, terms in keyword_map:
+        if any(term in lowered for term in terms):
+            return ALLOWED_OWASP_CATEGORIES[key]
+    return None
+
+
+def _match_semgrep_finding(
+    finding: dict[str, Any],
+    semgrep_findings: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    line_start = _coerce_int(finding.get("line_start") or finding.get("line"))
+    code_snippet = str(finding.get("code_snippet") or "").strip()
+    title = str(finding.get("title") or "").lower()
+    description = str(finding.get("description") or "").lower()
+
+    candidates: list[dict[str, Any]] = []
+
+    if line_start is not None:
+        line_candidates = [
+            sf for sf in semgrep_findings
+            if _coerce_int(sf.get("line_start")) == line_start
+        ]
+        if len(line_candidates) == 1:
+            return line_candidates[0]
+        candidates.extend(line_candidates)
+
+    if code_snippet:
+        snippet_candidates = [
+            sf for sf in semgrep_findings
+            if code_snippet in str(sf.get("code_snippet", ""))
+            or str(sf.get("code_snippet", "")) in code_snippet
+        ]
+        if len(snippet_candidates) == 1:
+            return snippet_candidates[0]
+        candidates.extend(snippet_candidates)
+
+    if title or description:
+        text = f"{title} {description}"
+        text_candidates = [
+            sf for sf in semgrep_findings
+            if str(sf.get("rule_name", "")).lower() in text
+            or str(sf.get("rule_id", "")).lower() in text
+            or str(sf.get("message", "")).lower() in text
+        ]
+        if len(text_candidates) == 1:
+            return text_candidates[0]
+        candidates.extend(text_candidates)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _normalize_agent_output(agent_out: dict[str, Any], state: ScanState) -> dict[str, Any]:
+    semgrep_findings: list[dict[str, Any]] = state.get("semgrep_out", {}).get("findings", [])
+    raw_findings = agent_out.get("findings", [])
+    if not isinstance(raw_findings, list):
+        agent_out["findings"] = []
+        return agent_out
+
+    normalized_findings: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any, Any]] = set()
+
+    for finding in raw_findings:
+        if not isinstance(finding, dict):
+            continue
+
+        filepath = (
+            finding.get("filepath")
+            or finding.get("file_path")
+            or finding.get("file")
+            or finding.get("path")
+        )
+        line_start = _coerce_int(finding.get("line_start") or finding.get("line"))
+        line_end = _coerce_int(finding.get("line_end"))
+
+        semgrep_match = _match_semgrep_finding(finding, semgrep_findings)
+        if not filepath and semgrep_match:
+            filepath = semgrep_match.get("filepath")
+
+        owasp_category = _canonical_owasp(
+            finding.get("owasp_category") or finding.get("owasp")
+        )
+        if not owasp_category and semgrep_match:
+            owasp_category = _canonical_owasp(semgrep_match.get("owasp"))
+        if not owasp_category:
+            owasp_category = _infer_owasp_from_text(
+                f"{finding.get('title', '')} {finding.get('description', '')}"
+            )
+
+        cwe_value = _normalize_cwe(finding.get("cwe_id") or finding.get("cwe"))
+        if not cwe_value and semgrep_match:
+            cwe_value = _normalize_cwe(semgrep_match.get("cwe"))
+
+        severity = str(finding.get("severity", "MEDIUM")).upper()
+        if severity in {"ERROR", "CRITICAL"}:
+            severity = "CRITICAL"
+        elif severity in {"WARNING", "WARN", "HIGH"}:
+            severity = "HIGH"
+        elif severity in {"INFO", "LOW"}:
+            severity = "LOW"
+        elif severity not in {"CRITICAL", "HIGH", "MEDIUM", "LOW"}:
+            severity = "MEDIUM"
+
+        normalized = dict(finding)
+        normalized["filepath"] = filepath
+        normalized["file_path"] = filepath
+        normalized["line_start"] = line_start
+        normalized["line_end"] = line_end
+        normalized["owasp_category"] = owasp_category
+        normalized["cwe"] = cwe_value
+        normalized["cwe_id"] = cwe_value
+        normalized["severity"] = severity
+
+        dedupe_key = (
+            normalized.get("filepath"),
+            normalized.get("line_start"),
+            str(normalized.get("title", "")).strip().lower(),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        normalized_findings.append(normalized)
+
+    agent_out["findings"] = normalized_findings
+    return agent_out
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +542,7 @@ def node_agent(state: ScanState) -> dict:
 
     try:
         agent_out = run_vuln_agent(state)
+        agent_out = _normalize_agent_output(agent_out, state)
         logger.info(
             f"[node_agent] LLM returned {len(agent_out.get('findings', []))} findings"
         )
@@ -364,11 +582,16 @@ def _assemble_report(state: ScanState) -> dict:
     file_reader_meta = state.get("file_reader_out", {}).get("metadata", {})
     cg               = state.get("call_graph_out", {})
     cg_stats         = cg.get("stats", {})
+    now_ts           = datetime.now(timezone.utc).timestamp()
+    scan_start       = float(state.get("scan_started_at", now_ts))
+    scan_duration_ms = max(0, int((now_ts - scan_start) * 1000))
 
     return {
         "scan_id":    str(uuid.uuid4()),
         "repo_path":  state["repo_path"],
         "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "scanned_files": file_reader_meta.get("total_files", 0),
+        "scan_duration_ms": scan_duration_ms,
         "stats": {
             "total_files":    file_reader_meta.get("total_files", 0),
             "languages":      file_reader_meta.get("languages_detected", []),
@@ -519,6 +742,7 @@ async def start_scan(
         "progress":         [],
         "current_stage":    "init",
         "scan_error":       None,
+        "scan_started_at":  datetime.now(timezone.utc).timestamp(),
     }
 
     # Accumulate progress events across all streamed chunks.  We track the

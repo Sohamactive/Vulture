@@ -106,6 +106,15 @@ For each finding provide:
 	   "LOW -- flagged by heuristic, may be false positive")
 8. fix: specific code fix recommendation
 9. cwe: relevant CWE ID if applicable
+10. owasp_category: one of
+   "A01:Access Control", "A02:Crypto", "A03:Injection", "A04:Design",
+   "A05:Config", "A06:Outdated", "A07:Auth", "A08:Integrity",
+   "A09:Logging", "A10:SSRF"
+
+IMPORTANT:
+- Every finding MUST include exact filepath from input (never null).
+- If uncertain, use filepath where Semgrep/AST flag detected.
+- Do not merge multiple files into one finding.
 
 Return ONLY a valid JSON object with this exact schema (no markdown fences):
 {{
@@ -120,7 +129,8 @@ Return ONLY a valid JSON object with this exact schema (no markdown fences):
 	"exploitability": "HIGH -- fetch_user() is called directly from the public API",
 	"confidence":     "HIGH -- confirmed by Semgrep rule match and AST flag",
 	  "fix":            "Use parameterized queries: cursor.execute(..., (user_id,))",
-	  "cwe":            "CWE-89"
+	  "cwe":            "CWE-89",
+	  "owasp_category": "A03:Injection"
 	}}
   ],
   "summary": "Found 3 critical, 2 high, 1 medium vulnerability",
