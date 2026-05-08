@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MessageCircle, FileText } from 'lucide-react';
 import TerminalLine from '../ui/TerminalLine';
 import { useScanStore } from '../../store/scanStore';
 import { createScan, getReport, getScan } from '../../lib/api';
@@ -6,12 +8,14 @@ import { useAuthToken } from '../../lib/useAuthToken';
 import { mapReport } from '../../lib/reportMapper';
 
 export default function ScanProgress() {
+  const navigate = useNavigate();
   const {
     uploadedFile,
     repoUrl,
     scanProgress,
     scanLogs,
     scanStatus,
+    scanId,
     scanError,
     addLog,
     setProgress,
@@ -223,6 +227,23 @@ export default function ScanProgress() {
               style={{ width: `${scanProgress}%` }}
             ></div>
           </div>
+
+          {scanStatus === 'complete' && (
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => navigate(`/report/${scanId}`)}
+                className="flex items-center justify-center gap-2 border border-[var(--border)] px-4 py-2 text-sm font-bold uppercase tracking-widest text-[var(--text-dim)] hover:text-[var(--cyan)] hover:border-[var(--cyan)] transition-colors"
+              >
+                <FileText size={16} /> View Report
+              </button>
+              <button
+                onClick={() => navigate(`/chat/${scanId}`)}
+                className="flex items-center justify-center gap-2 border border-[var(--cyan)] px-4 py-2 text-sm font-bold uppercase tracking-widest text-[var(--cyan)] hover:bg-[var(--cyan)] hover:text-black transition-colors"
+              >
+                <MessageCircle size={16} /> Talk to DevSecOps
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Error Footer */}

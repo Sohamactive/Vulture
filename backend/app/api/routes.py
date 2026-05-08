@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.auth import router as auth_router
+from app.api.chat import router as chat_router
 from app.api.repos import router as repos_router
 from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
@@ -19,5 +20,6 @@ api_router.include_router(auth_router)
 api_router.include_router(repos_router)
 api_router.include_router(scans_router)
 api_router.include_router(reports_router)
+api_router.include_router(chat_router)
 api_router.include_router(ws_router)
 api_router.include_router(connectivity_router)

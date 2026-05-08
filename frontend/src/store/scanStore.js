@@ -23,6 +23,16 @@ export const useScanStore = create((set) => ({
   report: null,
   setReport: (r) => set({ report: r, scanStatus: 'complete' }),
 
+  // Chat state
+  chatMessages: [],
+  chatLoading: false,
+  chatError: null,
+  setChatMessages: (messages) => set({ chatMessages: messages }),
+  addChatMessage: (message) => set((s) => ({ chatMessages: [...s.chatMessages, message] })),
+  setChatLoading: (loading) => set({ chatLoading: loading }),
+  setChatError: (chatError) => set({ chatError }),
+  resetChat: () => set({ chatMessages: [], chatLoading: false, chatError: null }),
+
   // Scan history state
   scanHistory: [],
   loadingScanHistory: false,
@@ -38,6 +48,9 @@ export const useScanStore = create((set) => ({
     scanError: null,
     uploadedFile: null, 
     repoUrl: '', 
-    report: null 
+    report: null,
+    chatMessages: [],
+    chatLoading: false,
+    chatError: null,
   })
 }))

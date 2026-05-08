@@ -3,6 +3,7 @@ import Navbar from './components/layout/Navbar'
 import Landing from './pages/Landing'
 import Scan from './pages/Scan'
 import Report from './pages/Report'
+import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
 
@@ -29,6 +30,7 @@ function App() {
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
           <Route path="/report/:scanId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
+          <Route path="/chat/:scanId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
         </Routes>
       </div>
     </div>

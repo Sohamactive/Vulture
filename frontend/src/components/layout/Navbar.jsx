@@ -1,11 +1,51 @@
 import { Link, useLocation } from 'react-router-dom';
 import GlitchText from '../ui/GlitchText';
 import { Terminal, LayoutDashboard } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import GlitchText from '../ui/GlitchText';
+import { Terminal, FileDown, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 
 export default function Navbar() {
   const location = useLocation();
   const isDashboardPage = location.pathname === '/dashboard';
+  const navigate = useNavigate();
+  const isReportPage = location.pathname.includes('/report');
+  const isDashboardPage = location.pathname === '/dashboard';
+  const { getToken } = useAuthToken();
+
+  // Extract scanId from report/chat URL for export and navigation
+  const scanIdMatch = location.pathname.match(/\/(?:report|chat)\/(.+)/);
+  const currentScanId = scanIdMatch ? scanIdMatch[1] : null;
+
+  const handleExport = async () => {
+    if (!currentScanId) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const data = await exportReport(token, currentScanId, 'json');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vulture-report-${currentScanId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
+
+  const handleChatNavigate = () => {
+    if (currentScanId) {
+      navigate(`/chat/${currentScanId}`);
+      return;
+    }
+
+    const entered = window.prompt('Enter a scan ID to open DevSecOps chat:');
+    const trimmed = entered ? entered.trim() : '';
+    if (trimmed) navigate(`/chat/${trimmed}`);
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-6 pt-3">
@@ -37,6 +77,16 @@ export default function Navbar() {
               </SignedIn>
 
               <div className="h-6 w-px bg-[var(--border)]"></div>
+            <SignedIn>
+              <button
+                onClick={handleChatNavigate}
+                className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
+              >
+                <MessageCircle size={16} /> Chat
+              </button>
+            </SignedIn>
+
+            <div className="h-6 w-px bg-[var(--border)] mx-2"></div>
 
               <SignedOut>
                 <SignInButton mode="modal">
