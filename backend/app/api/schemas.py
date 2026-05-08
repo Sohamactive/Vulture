@@ -63,6 +63,17 @@ class VulnerabilitySummary(BaseModel):
     code_snippet: Optional[str] = None
     description: Optional[str] = None
     remediation: Optional[List[str]] = None
+    confidence_score: Optional[int] = None
+    exploitability: Optional[str] = None
+    business_impact: Optional[str] = None
+    false_positive_risk: Optional[str] = None
+    filepath: Optional[str] = None
+    line_numbers: Optional[List[int]] = None
+    attack_scenario: Optional[str] = None
+    exploit_chain: Optional[List[str]] = None
+    remediation_priority: Optional[str] = None
+    reachability: Optional[str] = None
+    finding_metadata: Optional[dict] = None
 
 
 class ScanReport(BaseModel):

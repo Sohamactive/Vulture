@@ -26,7 +26,7 @@ export default function IssueDetail({ issue }) {
         <div className="mb-6">
           <h4 className="text-[var(--text-primary)] font-bold mb-2 flex items-center gap-2">
             <Code size={16} className="text-[var(--cyan)]" />
-            Vulnerable Code Snippet ({issue.file}:{issue.line})
+            Vulnerable Code Snippet ({issue.file || 'unknown file'}{issue.line != null ? `:${issue.line}` : ''})
           </h4>
           <div className="border border-[var(--border)] rounded-sm overflow-hidden text-sm">
             <pre className="!m-0 !bg-[var(--bg-surface)] !p-4 line-numbers">

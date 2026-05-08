@@ -32,7 +32,7 @@ export function mapReport(apiReport) {
       owasp_category: issue.owasp_category || 'Uncategorized',
       cve_id: issue.cve_id || null,
       cwe_id: issue.cwe_id || null,
-      file: issue.file_path || 'unknown',
+      file: issue.file_path || null,
       line: issue.line_start || null,
       line_end: issue.line_end || null,
       code_snippet: issue.code_snippet || '',
@@ -44,7 +44,9 @@ export function mapReport(apiReport) {
   return {
     scan_id: apiReport.id,
     summary,
-    security_score: apiReport.security_score || null,
+    security_score: apiReport.security_score ?? null,
+    scanned_files: apiReport.scanned_files ?? 0,
+    scan_duration_ms: apiReport.scan_duration_ms ?? 0,
     owasp_scores: owaspScores,
     issues
   }

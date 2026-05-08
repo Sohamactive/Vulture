@@ -1,14 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, CheckCircle, Cpu, Lock, ArrowRight, GitBranch, ChevronDown } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react';
 import VantaFog from '../components/ui/VantaFog';
-import FloatingTerminal from '../components/ui/FloatingTerminal';
 import { useScanStore } from '../store/scanStore';
 import ScanProgress from '../components/upload/ScanProgress';
 import ReportView from '../components/report/ReportView';
-import { getRepos, getAuthMe } from '../lib/api';
+import { getRepos, getAuthMe, getScanHistory } from '../lib/api';
 import { useAuthToken } from '../lib/useAuthToken';
+
+const EMPTY_LIVE_STATS = {
+  totalVulns: 0,
+  projectsSecured: 0,
+}
+
+function countSummaryVulns(summary) {
+  if (!summary || typeof summary !== 'object') return 0
+  const keys = ['critical', 'high', 'medium', 'low', 'info']
+  return keys.reduce((acc, key) => acc + Number(summary[key] || 0), 0)
+}
+
+function formatCount(value) {
+  const safe = Number.isFinite(value) ? value : 0
+  return new Intl.NumberFormat('en-US').format(safe)
+}
 
 export default function Landing() {
   const { isSignedIn } = useUser();
@@ -17,18 +32,16 @@ export default function Landing() {
   const [repos, setRepos] = useState([]);
   const [repoUrl, setRepoUrl] = useState('');
   const [loadingRepos, setLoadingRepos] = useState(false);
-  const scanSectionRef = React.useRef(null);
+  const [liveStats, setLiveStats] = useState(EMPTY_LIVE_STATS);
+  const scanSectionRef = useRef(null);
 
   useEffect(() => {
-    if (!isSignedIn) {
-      setRepos([]);
-      return;
-    }
+    if (!isSignedIn) return;
 
     let cancelled = false;
-    setLoadingRepos(true);
 
     (async () => {
+      setLoadingRepos(true);
       try {
         const token = await getToken();
         if (!token || cancelled) return;
@@ -56,6 +69,49 @@ export default function Landing() {
     return () => { cancelled = true; };
   }, [isSignedIn, getToken]);
 
+  useEffect(() => {
+    if (!isSignedIn) return;
+
+    let cancelled = false;
+
+    const refreshLiveStats = async () => {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const scans = await getScanHistory(token);
+        if (!Array.isArray(scans) || cancelled) return;
+
+        const completed = scans.filter((scan) => scan?.status === 'completed');
+
+        const totalVulns = completed.reduce(
+          (sum, scan) => sum + countSummaryVulns(scan?.summary),
+          0
+        );
+
+        const securedSet = new Set(
+          completed
+            .filter((scan) => Number(scan?.security_score || 0) >= 70)
+            .map((scan) => scan?.repo_full_name)
+            .filter(Boolean)
+        );
+
+        setLiveStats({
+          totalVulns,
+          projectsSecured: securedSet.size,
+        });
+      } catch {
+        if (!cancelled) setLiveStats(EMPTY_LIVE_STATS);
+      }
+    };
+
+    refreshLiveStats();
+    const timer = setInterval(refreshLiveStats, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isSignedIn, getToken]);
+
   // Reset scan state on mount
   useEffect(() => {
     resetScan();
@@ -72,6 +128,8 @@ export default function Landing() {
       }, 100);
     }
   };
+
+  const displayedStats = isSignedIn ? liveStats : EMPTY_LIVE_STATS;
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[var(--bg-primary)]">
@@ -168,17 +226,13 @@ export default function Landing() {
               </div>
               
               {/* Stats Row */}
-              <div className="flex items-center gap-12 pt-8 border-t border-[var(--border)] max-w-xl">
+              <div className="flex items-center gap-14 pt-8 border-t border-[var(--border)] max-w-xl">
                 <div>
-                  <div className="text-3xl font-bold text-white mb-1">15,000+</div>
+                  <div className="text-3xl font-bold text-white mb-1">{formatCount(displayedStats.totalVulns)}</div>
                   <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-widest font-bold">Vulns Detected</div>
                 </div>
                 <div>
-                  <div className="text-3xl font-bold text-white mb-1">99.2%</div>
-                  <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-widest font-bold">Accuracy</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-white mb-1">500+</div>
+                  <div className="text-3xl font-bold text-white mb-1">{formatCount(displayedStats.projectsSecured)}</div>
                   <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-widest font-bold">Projects Secured</div>
                 </div>
               </div>

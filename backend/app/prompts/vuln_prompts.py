@@ -4,7 +4,9 @@ from typing import Any
 
 SYSTEM_PROMPT = """
 You are a senior application security engineer performing static analysis.
-Return a concise, accurate vulnerability report strictly in JSON.
+Return concise, accurate contextual intelligence strictly in JSON.
+Do not generate full report formatting or narrative sections.
+Only enrich findings and repository context.
 Do not include markdown fences, commentary, or extra keys.
 """.strip()
 
@@ -79,7 +81,8 @@ def build_vuln_agent_messages(state: dict) -> list[dict]:
 	flagged_files = _build_flagged_files(parse_results, source_files)
 
 	user_prompt = f"""
-Analyze the findings below and produce a structured vulnerability report.
+Analyze static-analysis evidence below.
+Task: enrich findings context only; renderer will build final report deterministically.
 
 === SEMGREP FINDINGS ({len(semgrep_findings)}) ===
 {json.dumps(semgrep_findings, indent=2)}
@@ -93,30 +96,38 @@ Analyze the findings below and produce a structured vulnerability report.
 === CIRCULAR IMPORTS ===
 {json.dumps(call_graph.get("circular_imports", []), indent=2)}
 
-For each finding provide:
+For each finding provide these fields:
 1. severity: CRITICAL / HIGH / MEDIUM / LOW
-2. title: short descriptive title
-3. description: what the vulnerability is
-4. filepath + line_start
-5. code_snippet: the vulnerable code
-6. exploitability: is it actually exploitable given the call graph context?
-7. confidence: HIGH / MEDIUM / LOW -- with a brief reason
-   (e.g. "HIGH -- confirmed by Semgrep rule match",
-	   "MEDIUM -- pattern detected but requires manual review",
-	   "LOW -- flagged by heuristic, may be false positive")
-8. fix: specific code fix recommendation
-9. cwe: relevant CWE ID if applicable
-10. owasp_category: one of
+2. title
+3. description
+4. filepath
+5. line_start
+6. line_end (optional)
+7. code_snippet
+8. exploitability (LOW/MEDIUM/HIGH/CRITICAL + short reason)
+9. business_impact (short)
+10. false_positive_risk (LOW/MEDIUM/HIGH + short reason)
+11. attack_scenario (1-2 sentence attacker workflow)
+12. exploit_chain (ordered list; empty if none)
+13. remediation_priority (P0/P1/P2/P3 + short reason)
+14. reachability (publicly reachable/auth-protected/internal only/not externally exposed)
+15. fix
+16. cwe
+17. owasp_category: one of
    "A01:Access Control", "A02:Crypto", "A03:Injection", "A04:Design",
    "A05:Config", "A06:Outdated", "A07:Auth", "A08:Integrity",
    "A09:Logging", "A10:SSRF"
+18. confidence_score (0-100; evidence-based, not random)
 
 IMPORTANT:
-- Every finding MUST include exact filepath from input (never null).
+- Keep output deterministic and concise.
+- Every finding MUST include exact filepath from input when available.
 - If uncertain, use filepath where Semgrep/AST flag detected.
-- Do not merge multiple files into one finding.
+- Do not merge multiple files into one finding unless they are exact duplicates.
+- Do not fabricate endpoints, files, symbols, or package names absent from evidence.
+- Provide repository-level assessments as concise bullets/phrases, not long prose.
 
-Return ONLY a valid JSON object with this exact schema (no markdown fences):
+Return ONLY a valid JSON object with this schema (no markdown fences):
 {{
   "findings": [
 	{{
@@ -125,15 +136,36 @@ Return ONLY a valid JSON object with this exact schema (no markdown fences):
 	  "description":    "...",
 	  "filepath":       "src/auth.py",
 	  "line_start":     42,
+      "line_end":       42,
 	  "code_snippet":   "cursor.execute('SELECT * FROM users WHERE id=' + user_id)",
-	"exploitability": "HIGH -- fetch_user() is called directly from the public API",
-	"confidence":     "HIGH -- confirmed by Semgrep rule match and AST flag",
+	  "exploitability": "HIGH -- reachable from public endpoint",
+      "business_impact": "Unauthorized data read/write",
+      "false_positive_risk": "LOW -- strong rule + contextual evidence",
+      "attack_scenario": "Attacker sends crafted id parameter to bypass query safety and dump user records.",
+      "exploit_chain": ["SQL injection", "database dump"],
+      "remediation_priority": "P0 -- externally reachable and high impact",
+      "reachability": "publicly reachable",
 	  "fix":            "Use parameterized queries: cursor.execute(..., (user_id,))",
 	  "cwe":            "CWE-89",
-	  "owasp_category": "A03:Injection"
+	  "owasp_category": "A03:Injection",
+      "confidence_score": 95
 	}}
   ],
-  "summary": "Found 3 critical, 2 high, 1 medium vulnerability",
+  "summary": "Concise repository-wide risk summary",
+  "executive_risk_verdict": {{
+    "overall_risk_posture": "High",
+    "most_critical_risk_area": "Authentication and access control",
+    "remotely_exploitable_findings": "Likely yes"
+  }},
+  "ai_security_assessment": {{
+    "repository_wide_summary": "Short summary",
+    "top_risk_categories": ["A07:Auth", "A03:Injection"],
+    "likely_attack_vectors": ["Auth bypass", "Injection via API inputs"],
+    "architectural_weaknesses": ["Over-trusted internal calls", "Weak boundary validation"]
+  }},
+  "attack_scenarios": [
+    "Attacker forges JWT token due to weak verification and reaches admin route."
+  ],
   "risk_score": 8.5,
   "most_vulnerable_file": "src/auth.py"
 }}

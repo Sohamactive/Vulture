@@ -2,14 +2,14 @@ import base64
 import html
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Any, Dict, Iterable
+from typing import Any, Iterable
 from zipfile import ZIP_DEFLATED, ZipFile
 
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 
 
-def generate_report(report: Dict[str, Any], export_format: str) -> Dict[str, Any]:
+def generate_report(report: dict[str, Any], export_format: str) -> dict[str, Any]:
     normalized_format = (export_format or "json").lower()
 
     if normalized_format == "docx":
@@ -26,7 +26,7 @@ def generate_report(report: Dict[str, Any], export_format: str) -> Dict[str, Any
     return {"format": normalized_format, "report": report}
 
 
-def _build_docx_bytes(report: Dict[str, Any]) -> bytes:
+def _build_docx_bytes(report: dict[str, Any]) -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as docx:
         docx.writestr("[Content_Types].xml", _content_types_xml())
@@ -59,13 +59,40 @@ def _safe_int(value: Any) -> int:
     return 0
 
 
-def _summary_count(summary: Dict[str, Any], key: str) -> int:
+def _safe_float(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _summary_count(summary: dict[str, Any], key: str) -> int:
     return _safe_int(summary.get(key, 0))
 
 
-def _normalize_issues(report: Dict[str, Any]) -> list[Dict[str, Any]]:
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def _normalize_issues(report: dict[str, Any]) -> list[dict[str, Any]]:
     issues = report.get("issues") or []
-    normalized: list[Dict[str, Any]] = []
+    normalized: list[dict[str, Any]] = []
     if not isinstance(issues, list):
         return normalized
     for issue in issues:
@@ -92,6 +119,7 @@ def _p(
     bold: bool = False,
     preserve_space: bool = False,
     mono: bool = False,
+    color: str | None = None,
     spacing_before: int | None = None,
     spacing_after: int | None = None,
 ) -> str:
@@ -108,9 +136,9 @@ def _p(
     if bold:
         run_props.append("<w:b/>")
     if mono:
-        run_props.append(
-            '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>'
-        )
+        run_props.append('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>')
+    if color:
+        run_props.append(f'<w:color w:val="{color}"/>')
     rpr = f"<w:rPr>{''.join(run_props)}</w:rPr>" if run_props else ""
 
     space_attr = ' xml:space="preserve"' if preserve_space else ""
@@ -121,75 +149,349 @@ def _code_block(code: Any) -> str:
     if not code:
         return _p("No snippet provided.", style="Code")
     lines = str(code).replace("\r\n", "\n").split("\n")
+    if not lines:
+        return _p("No snippet provided.", style="Code")
     parts = []
     for line in lines:
         parts.append(_p(line if line else " ", style="Code", preserve_space=True, mono=True))
     return "".join(parts)
 
 
-def _table(rows: Iterable[tuple[str, str]]) -> str:
-    row_xml = []
-    for label, value in rows:
-        row_xml.append(
-            "<w:tr>"
-            "<w:tc>"
-            "<w:tcPr><w:tcW w:w=\"2800\" w:type=\"dxa\"/></w:tcPr>"
-            f"{_p(label, bold=True)}"
-            "</w:tc>"
-            "<w:tc>"
-            "<w:tcPr><w:tcW w:w=\"6800\" w:type=\"dxa\"/></w:tcPr>"
-            f"{_p(value)}"
-            "</w:tc>"
-            "</w:tr>"
-        )
+def _severity_style(severity: str) -> str:
+    sev = str(severity or "").lower()
+    if sev == "critical":
+        return "BannerCritical"
+    if sev == "high":
+        return "BannerHigh"
+    if sev == "medium":
+        return "BannerMedium"
+    return "BannerLow"
+
+
+def _table(rows: list[list[str]], headers: list[str] | None = None, col_widths: list[int] | None = None) -> str:
+    if not rows and not headers:
+        return ""
+
+    column_count = len(headers) if headers else len(rows[0])
+    widths = col_widths or [int(9600 / max(1, column_count)) for _ in range(column_count)]
+    if len(widths) < column_count:
+        widths = widths + [widths[-1] for _ in range(column_count - len(widths))]
+
+    table_rows: list[str] = []
+    if headers:
+        cells = []
+        for idx, header in enumerate(headers):
+            cells.append(
+                "<w:tc>"
+                f"<w:tcPr><w:tcW w:w=\"{widths[idx]}\" w:type=\"dxa\"/></w:tcPr>"
+                f"{_p(header, bold=True)}"
+                "</w:tc>"
+            )
+        table_rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
+
+    for row in rows:
+        cells = []
+        for idx in range(column_count):
+            value = row[idx] if idx < len(row) else ""
+            cells.append(
+                "<w:tc>"
+                f"<w:tcPr><w:tcW w:w=\"{widths[idx]}\" w:type=\"dxa\"/></w:tcPr>"
+                f"{_p(value)}"
+                "</w:tc>"
+            )
+        table_rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
+
+    grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths[:column_count])
     return (
         "<w:tbl>"
         "<w:tblPr>"
-        "<w:tblStyle w:val=\"TableGrid\"/>"
-        "<w:tblW w:w=\"9600\" w:type=\"dxa\"/>"
+        '<w:tblStyle w:val="TableGrid"/>'
+        '<w:tblW w:w="9600" w:type="dxa"/>'
         "</w:tblPr>"
-        "<w:tblGrid><w:gridCol w:w=\"2800\"/><w:gridCol w:w=\"6800\"/></w:tblGrid>"
-        f"{''.join(row_xml)}"
+        f"<w:tblGrid>{grid}</w:tblGrid>"
+        f"{''.join(table_rows)}"
         "</w:tbl>"
     )
 
 
-def _document_xml(report: Dict[str, Any]) -> str:
+def _list(items: Iterable[str]) -> str:
+    parts: list[str] = []
+    for item in items:
+        parts.append(_p(f"- {item}", style="ListParagraph"))
+    return "".join(parts)
+
+
+def _line_range(issue: dict[str, Any]) -> str:
+    line_numbers = issue.get("line_numbers")
+    if isinstance(line_numbers, list) and line_numbers:
+        return ", ".join(str(_safe_int(x)) for x in line_numbers if _safe_int(x) > 0)
+    line_start = _safe_int(issue.get("line_start"))
+    line_end = _safe_int(issue.get("line_end"))
+    if line_start <= 0:
+        return "N/A"
+    if line_end > 0 and line_end >= line_start:
+        return f"{line_start}-{line_end}"
+    return str(line_start)
+
+
+def _chain_text(chain: Any) -> str:
+    items = _as_str_list(chain)
+    if not items:
+        return "N/A"
+    return " -> ".join(items)
+
+
+def _document_xml(report: dict[str, Any]) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    summary = _as_dict(report.get("summary"))
     issues = _normalize_issues(report)
     score = _safe_int(report.get("security_score"))
     scanned_files = _safe_int(report.get("scanned_files"))
     scan_duration_ms = _safe_int(report.get("scan_duration_ms"))
     total_findings = sum(_summary_count(summary, key) for key in SEVERITY_ORDER)
 
+    executive = _as_dict(summary.get("executive_risk_verdict"))
+    ai_assessment = _as_dict(summary.get("ai_security_assessment"))
+    score_breakdown = _as_dict(summary.get("security_score_breakdown"))
+    repository_intel = _as_dict(summary.get("repository_intelligence"))
+    attack_surface = _as_dict(summary.get("attack_surface_overview"))
+    heatmap = _as_list(summary.get("file_risk_heatmap"))
+    attack_scenarios = _as_str_list(summary.get("attack_scenarios"))
+    reachability = _as_dict(summary.get("reachability_analysis"))
+    exploit_chains = _as_list(summary.get("exploit_chains"))
+    privacy = _as_dict(summary.get("privacy_processing"))
+    risk_prioritization = _as_list(summary.get("risk_prioritization"))
+    dedup = _as_list(summary.get("finding_deduplication"))
+
     parts: list[str] = [
         _p("Vulture Security Scan Report", style="Title"),
         _p(f"Generated on {now}", style="Subtitle"),
         _p("Executive Summary", style="Heading1"),
         _table(
-            (
-                ("Scan ID", str(report.get("id") or "N/A")),
-                ("Security Score", f"{score}/100"),
-                ("Total Findings", str(total_findings)),
-                ("Scanned Files", str(scanned_files)),
-                ("Scan Duration", _duration_text(scan_duration_ms)),
-            )
+            [
+                ["Scan ID", str(report.get("id") or "N/A")],
+                ["Security Score", f"{score}/100"],
+                ["Total Findings", str(total_findings)],
+                ["Scanned Files", str(scanned_files)],
+                ["Scan Duration", _duration_text(scan_duration_ms)],
+            ],
+            col_widths=[2800, 6800],
         ),
         _p("Severity Breakdown", style="Heading2"),
         _table(
-            tuple(
-                (severity.title(), str(_summary_count(summary, severity)))
-                for severity in SEVERITY_ORDER
-            )
+            [[severity.title(), str(_summary_count(summary, severity))] for severity in SEVERITY_ORDER],
+            headers=["Severity", "Count"],
+            col_widths=[3000, 6600],
         ),
-        _p("Findings", style="Heading1"),
     ]
+
+    parts.extend(
+        [
+            _p("Executive Risk Verdict", style="Heading1"),
+            _table(
+                [
+                    ["Overall risk posture", str(executive.get("overall_risk_posture") or "N/A")],
+                    ["Most critical risk area", str(executive.get("most_critical_risk_area") or "N/A")],
+                    [
+                        "Remotely exploitable findings",
+                        str(executive.get("remotely_exploitable_findings") or "N/A"),
+                    ],
+                ],
+                col_widths=[3600, 6000],
+            ),
+            _p("AI Security Assessment", style="Heading1"),
+            _p(str(ai_assessment.get("repository_wide_summary") or "No AI assessment provided."), style="BodyText"),
+            _p("Top Risk Categories", style="Heading3"),
+            _list(_as_str_list(ai_assessment.get("top_risk_categories")) or ["N/A"]),
+            _p("Likely Attack Vectors", style="Heading3"),
+            _list(_as_str_list(ai_assessment.get("likely_attack_vectors")) or ["N/A"]),
+            _p("Architectural Weaknesses", style="Heading3"),
+            _list(_as_str_list(ai_assessment.get("architectural_weaknesses")) or ["N/A"]),
+        ]
+    )
+
+    parts.append(_p("Security Score Breakdown", style="Heading1"))
+    breakdown_rows: list[list[str]] = []
+    for category in (
+        "Authentication Security",
+        "Input Validation",
+        "Dependency Security",
+        "Transport Security",
+        "Configuration Security",
+        "Secrets Management",
+    ):
+        entry = _as_dict(score_breakdown.get(category))
+        breakdown_rows.append(
+            [
+                category,
+                f"{_safe_int(entry.get('score'))}/100",
+                str(entry.get("explanation") or "N/A"),
+            ]
+        )
+    parts.append(
+        _table(
+            breakdown_rows,
+            headers=["Category", "Score", "Explanation"],
+            col_widths=[2600, 1600, 5400],
+        )
+    )
+
+    parts.extend(
+        [
+            _p("Repository Intelligence", style="Heading1"),
+            _table(
+                [
+                    ["Files analyzed", str(_safe_int(repository_intel.get("files_analyzed")))],
+                    ["Parsed files", str(_safe_int(repository_intel.get("parsed_files")))],
+                    ["Symbols indexed", str(_safe_int(repository_intel.get("symbols_indexed")))],
+                    ["Call edges", str(_safe_int(repository_intel.get("call_edges")))],
+                    [
+                        "Resolution rate",
+                        f"{_safe_float(repository_intel.get('resolution_rate')) * 100:.1f}%",
+                    ],
+                    [
+                        "Circular imports",
+                        str(len(_as_list(repository_intel.get("circular_imports")))),
+                    ],
+                    [
+                        "Unresolved call groups",
+                        str(len(_as_list(repository_intel.get("unresolved_calls")))),
+                    ],
+                ],
+                col_widths=[3200, 6400],
+            ),
+            _p("Hotspots", style="Heading3"),
+            _list(_as_str_list(repository_intel.get("hotspots")) or ["N/A"]),
+            _p("Attack Surface Overview", style="Heading1"),
+            _table(
+                [
+                    ["API routes", str(len(_as_list(attack_surface.get("api_routes"))))],
+                    ["Auth endpoints", str(len(_as_list(attack_surface.get("auth_endpoints"))))],
+                    ["Websocket endpoints", str(len(_as_list(attack_surface.get("websocket_endpoints"))))],
+                    ["File upload handlers", str(len(_as_list(attack_surface.get("file_upload_handlers"))))],
+                    ["External requests", str(len(_as_list(attack_surface.get("external_requests"))))],
+                    ["Database connectors", str(len(_as_list(attack_surface.get("database_connectors"))))],
+                    ["Filesystem access points", str(len(_as_list(attack_surface.get("filesystem_access_points"))))],
+                ],
+                col_widths=[3600, 6000],
+            ),
+        ]
+    )
+
+    parts.append(_p("File Risk Heatmap", style="Heading1"))
+    heatmap_rows: list[list[str]] = []
+    for item in heatmap[:12]:
+        if not isinstance(item, dict):
+            continue
+        heatmap_rows.append(
+            [
+                str(item.get("filepath") or "N/A"),
+                str(_safe_int(item.get("vulnerability_count"))),
+                str(item.get("dominant_risk_type") or "N/A"),
+                str(item.get("highest_severity") or "N/A"),
+            ]
+        )
+    if heatmap_rows:
+        parts.append(
+            _table(
+                heatmap_rows,
+                headers=["File", "Count", "Dominant Risk", "Highest Severity"],
+                col_widths=[4200, 1000, 2600, 1800],
+            )
+        )
+    else:
+        parts.append(_p("No file-level heatmap data available.", style="BodyText"))
+
+    parts.extend(
+        [
+            _p("Attack Scenarios", style="Heading1"),
+            _list(attack_scenarios or ["N/A"]),
+            _p("Reachability Analysis", style="Heading1"),
+        ]
+    )
+    reach_counts = _as_dict(reachability.get("counts"))
+    parts.append(
+        _table(
+            [[k.title(), str(_safe_int(v))] for k, v in reach_counts.items()],
+            headers=["Reachability", "Findings"],
+            col_widths=[4200, 5400],
+        )
+        if reach_counts
+        else _p("No reachability data available.", style="BodyText")
+    )
+
+    parts.append(_p("Exploit Chains", style="Heading1"))
+    if exploit_chains:
+        for chain in exploit_chains[:10]:
+            parts.append(_p(_chain_text(chain), style="ListParagraph"))
+    else:
+        parts.append(_p("No chained exploit paths identified.", style="BodyText"))
+
+    parts.append(_p("Finding Deduplication", style="Heading1"))
+    dedup_rows: list[list[str]] = []
+    for group in dedup[:20]:
+        if not isinstance(group, dict):
+            continue
+        dedup_rows.append(
+            [
+                str(group.get("group") or "N/A"),
+                str(group.get("title") or "N/A"),
+                str(_safe_int(group.get("instances"))),
+            ]
+        )
+    if dedup_rows:
+        parts.append(_table(dedup_rows, headers=["Group", "Title", "Instances"], col_widths=[1400, 6400, 1800]))
+    else:
+        parts.append(_p("No repeated findings grouped.", style="BodyText"))
+
+    parts.append(_p("Risk Prioritization", style="Heading1"))
+    prio_rows: list[list[str]] = []
+    for item in risk_prioritization[:12]:
+        if not isinstance(item, dict):
+            continue
+        prio_rows.append(
+            [
+                str(item.get("remediation_priority") or "N/A"),
+                str(item.get("severity") or "N/A"),
+                str(item.get("reachability") or "N/A"),
+                str(item.get("title") or "N/A"),
+                str(_safe_int(item.get("priority_score"))),
+            ]
+        )
+    if prio_rows:
+        parts.append(
+            _table(
+                prio_rows,
+                headers=["Priority", "Severity", "Reachability", "Finding", "Score"],
+                col_widths=[1700, 1200, 2000, 3700, 1000],
+            )
+        )
+    else:
+        parts.append(_p("No prioritization data available.", style="BodyText"))
+
+    parts.extend(
+        [
+            _p("Privacy and Processing", style="Heading1"),
+            _list(
+                [
+                    "Local parsing occurs before AI inference.",
+                    "Static analysis (AST, Tree-sitter, Semgrep, call graph) runs locally.",
+                    "AWS Bedrock is used for inference enrichment.",
+                    str(
+                        privacy.get("bedrock_training_policy")
+                        or "Bedrock does not use customer data for model training."
+                    ),
+                ]
+            ),
+            _p("Findings", style="Heading1"),
+        ]
+    )
 
     if not issues:
         parts.append(_p("No vulnerabilities were found in this scan.", style="BodyText"))
     else:
         for index, issue in enumerate(issues, start=1):
+            severity = str(issue.get("severity") or "low").lower()
             remediation = issue.get("remediation") or []
             if isinstance(remediation, str):
                 remediation = [remediation]
@@ -199,23 +501,34 @@ def _document_xml(report: Dict[str, Any]) -> str:
             parts.extend(
                 [
                     _p(f"{index}. {issue.get('title') or 'Untitled finding'}", style="Heading2"),
+                    _p(
+                        f"{severity.upper()} FINDING",
+                        style=_severity_style(severity),
+                        bold=True,
+                        color="FFFFFF",
+                    ),
                     _table(
-                        (
-                            ("Severity", str(issue.get("severity") or "unknown").upper()),
-                            ("Source", str(issue.get("detection_source") or "N/A")),
-                            ("OWASP", str(issue.get("owasp_category") or "N/A")),
-                            ("CWE", str(issue.get("cwe_id") or "N/A")),
-                            ("File", str(issue.get("file_path") or "N/A")),
-                            (
-                                "Line",
-                                str(issue.get("line_start") or "N/A")
-                                if not issue.get("line_end")
-                                else f"{issue.get('line_start') or 'N/A'} - {issue.get('line_end')}",
-                            ),
-                        )
+                        [
+                            ["Severity", severity.upper()],
+                            ["Confidence Score", f"{_safe_int(issue.get('confidence_score'))}/100"],
+                            ["Exploitability", str(issue.get("exploitability") or "N/A")],
+                            ["Business Impact", str(issue.get("business_impact") or "N/A")],
+                            ["False Positive Risk", str(issue.get("false_positive_risk") or "N/A")],
+                            ["Reachability", str(issue.get("reachability") or "N/A")],
+                            ["OWASP", str(issue.get("owasp_category") or "N/A")],
+                            ["CWE", str(issue.get("cwe_id") or "N/A")],
+                            ["File", str(issue.get("file_path") or issue.get("filepath") or "N/A")],
+                            ["Line(s)", _line_range(issue)],
+                            ["Remediation Priority", str(issue.get("remediation_priority") or "N/A")],
+                        ],
+                        col_widths=[3200, 6400],
                     ),
                     _p("Description", style="Heading3"),
                     _p(issue.get("description") or "No description provided.", style="BodyText"),
+                    _p("Attack Scenario", style="Heading3"),
+                    _p(issue.get("attack_scenario") or "No attack scenario provided.", style="BodyText"),
+                    _p("Exploit Chain", style="Heading3"),
+                    _p(_chain_text(issue.get("exploit_chain")), style="BodyText"),
                     _p("Code Snippet", style="Heading3"),
                     _code_block(issue.get("code_snippet")),
                     _p("Recommended Remediation", style="Heading3"),
@@ -223,15 +536,14 @@ def _document_xml(report: Dict[str, Any]) -> str:
             )
 
             if remediation:
-                for step in remediation:
-                    parts.append(_p(f"- {step}", style="ListParagraph"))
+                parts.extend([_p(f"- {step}", style="ListParagraph") for step in remediation])
             else:
                 parts.append(_p("No remediation guidance provided.", style="BodyText"))
 
     body = "".join(parts) + (
         "<w:sectPr>"
         '<w:pgSz w:w="12240" w:h="15840"/>'
-        '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>'
+        '<w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="708" w:footer="708" w:gutter="0"/>'
         "<w:cols w:space=\"708\"/>"
         "<w:docGrid w:linePitch=\"360\"/>"
         "</w:sectPr>"
@@ -317,46 +629,65 @@ def _styles_xml() -> str:
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Title">'
         '<w:name w:val="Title"/>'
-        "<w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"280\"/></w:pPr>"
+        "<w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"300\"/></w:pPr>"
         "<w:rPr><w:b/><w:sz w:val=\"40\"/></w:rPr>"
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Subtitle">'
         '<w:name w:val="Subtitle"/>'
-        "<w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"320\"/></w:pPr>"
+        "<w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"360\"/></w:pPr>"
         '<w:rPr><w:color w:val="666666"/><w:sz w:val="20"/></w:rPr>'
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Heading1">'
         '<w:name w:val="heading 1"/>'
-        "<w:pPr><w:spacing w:before=\"280\" w:after=\"160\"/></w:pPr>"
+        "<w:pPr><w:spacing w:before=\"300\" w:after=\"160\"/></w:pPr>"
         "<w:rPr><w:b/><w:sz w:val=\"30\"/></w:rPr>"
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Heading2">'
         '<w:name w:val="heading 2"/>'
-        "<w:pPr><w:spacing w:before=\"240\" w:after=\"120\"/></w:pPr>"
+        "<w:pPr><w:spacing w:before=\"240\" w:after=\"110\"/></w:pPr>"
         "<w:rPr><w:b/><w:sz w:val=\"26\"/></w:rPr>"
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Heading3">'
         '<w:name w:val="heading 3"/>'
-        "<w:pPr><w:spacing w:before=\"180\" w:after=\"90\"/></w:pPr>"
-        "<w:rPr><w:b/><w:sz w:val=\"24\"/></w:rPr>"
+        "<w:pPr><w:spacing w:before=\"180\" w:after=\"80\"/></w:pPr>"
+        "<w:rPr><w:b/><w:sz w:val=\"23\"/></w:rPr>"
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="BodyText">'
         '<w:name w:val="Body Text"/>'
-        "<w:pPr><w:spacing w:after=\"90\"/></w:pPr>"
+        "<w:pPr><w:spacing w:after=\"80\"/></w:pPr>"
         "<w:rPr><w:sz w:val=\"22\"/></w:rPr>"
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="Code">'
         '<w:name w:val="Code"/>'
-        "<w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/>"
+        "<w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/><w:ind w:left=\"240\"/>"
         '<w:shd w:val="clear" w:color="auto" w:fill="111827"/>'
         "</w:pPr>"
-        '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>'
-        '<w:color w:val="FFFFFF"/><w:sz w:val="20"/></w:rPr>'
+        '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:color w:val="FFFFFF"/><w:sz w:val="19"/></w:rPr>'
         "</w:style>"
         '<w:style w:type="paragraph" w:styleId="ListParagraph">'
         '<w:name w:val="List Paragraph"/>'
         "<w:pPr><w:ind w:left=\"360\"/><w:spacing w:after=\"60\"/></w:pPr>"
         "<w:rPr><w:sz w:val=\"22\"/></w:rPr>"
+        "</w:style>"
+        '<w:style w:type="paragraph" w:styleId="BannerCritical">'
+        '<w:name w:val="Banner Critical"/>'
+        "<w:pPr><w:spacing w:before=\"100\" w:after=\"80\"/><w:ind w:left=\"120\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"9F1239\"/></w:pPr>"
+        "<w:rPr><w:b/><w:color w:val=\"FFFFFF\"/><w:sz w:val=\"22\"/></w:rPr>"
+        "</w:style>"
+        '<w:style w:type="paragraph" w:styleId="BannerHigh">'
+        '<w:name w:val="Banner High"/>'
+        "<w:pPr><w:spacing w:before=\"100\" w:after=\"80\"/><w:ind w:left=\"120\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"B45309\"/></w:pPr>"
+        "<w:rPr><w:b/><w:color w:val=\"FFFFFF\"/><w:sz w:val=\"22\"/></w:rPr>"
+        "</w:style>"
+        '<w:style w:type="paragraph" w:styleId="BannerMedium">'
+        '<w:name w:val="Banner Medium"/>'
+        "<w:pPr><w:spacing w:before=\"100\" w:after=\"80\"/><w:ind w:left=\"120\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"A16207\"/></w:pPr>"
+        "<w:rPr><w:b/><w:color w:val=\"FFFFFF\"/><w:sz w:val=\"22\"/></w:rPr>"
+        "</w:style>"
+        '<w:style w:type="paragraph" w:styleId="BannerLow">'
+        '<w:name w:val="Banner Low"/>'
+        "<w:pPr><w:spacing w:before=\"100\" w:after=\"80\"/><w:ind w:left=\"120\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"1E3A8A\"/></w:pPr>"
+        "<w:rPr><w:b/><w:color w:val=\"FFFFFF\"/><w:sz w:val=\"22\"/></w:rPr>"
         "</w:style>"
         "</w:styles>"
     )
