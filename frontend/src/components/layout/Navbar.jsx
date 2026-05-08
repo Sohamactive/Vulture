@@ -1,14 +1,12 @@
-import { Link, useLocation } from 'react-router-dom';
-import GlitchText from '../ui/GlitchText';
-import { Terminal, LayoutDashboard } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import GlitchText from '../ui/GlitchText';
 import { Terminal, FileDown, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
+import { useAuthToken } from '../../lib/useAuthToken';
+import { exportReport } from '../../lib/api';
 
 export default function Navbar() {
   const location = useLocation();
-  const isDashboardPage = location.pathname === '/dashboard';
   const navigate = useNavigate();
   const isReportPage = location.pathname.includes('/report');
   const isDashboardPage = location.pathname === '/dashboard';
@@ -61,7 +59,16 @@ export default function Navbar() {
             </Link>
             
             <div className="flex items-center gap-4 sm:gap-6">
-              <a href="#docs" className="text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">Docs</a>
+              {isReportPage ? (
+                <button
+                  onClick={handleExport}
+                  className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
+                >
+                  <FileDown size={16} /> Export JSON
+                </button>
+              ) : (
+                <a href="#docs" className="text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase">Docs</a>
+              )}
 
               <SignedIn>
                 <Link
@@ -77,16 +84,16 @@ export default function Navbar() {
               </SignedIn>
 
               <div className="h-6 w-px bg-[var(--border)]"></div>
-            <SignedIn>
-              <button
-                onClick={handleChatNavigate}
-                className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
-              >
-                <MessageCircle size={16} /> Chat
-              </button>
-            </SignedIn>
+              <SignedIn>
+                <button
+                  onClick={handleChatNavigate}
+                  className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
+                >
+                  <MessageCircle size={16} /> Chat
+                </button>
+              </SignedIn>
 
-            <div className="h-6 w-px bg-[var(--border)] mx-2"></div>
+              <div className="h-6 w-px bg-[var(--border)] mx-2"></div>
 
               <SignedOut>
                 <SignInButton mode="modal">
