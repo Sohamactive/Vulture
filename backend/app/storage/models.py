@@ -53,6 +53,9 @@ class Vulnerability(Base):
     code_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     remediation: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    finding_metadata: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True, deferred=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

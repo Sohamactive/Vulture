@@ -64,7 +64,10 @@ export default function IssueList({ issues = [] }) {
                   <div className="text-xs text-[var(--text-dim)] flex items-center gap-3">
                     <span className="uppercase tracking-widest text-white/70">{issue.owasp_category}</span>
                     <span>|</span>
-                    <span className="font-mono">{issue.file}:{issue.line}</span>
+                    <span className="font-mono">
+                      {issue.file || 'unknown file'}
+                      {issue.line != null ? `:${issue.line}` : ''}
+                    </span>
                   </div>
                 </div>
                 

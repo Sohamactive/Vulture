@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,56 @@ from app.storage import crud
 from app.storage.db import AsyncSessionLocal, get_db
 
 router = APIRouter(prefix="/scans", tags=["scans"])
+
+
+def _coerce_int(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        if match:
+            return int(match.group(0))
+    return None
+
+
+def _normalize_cwe(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        for entry in value:
+            normalized = _normalize_cwe(entry)
+            if normalized:
+                return normalized
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return f"CWE-{text}"
+    match = re.search(r"(CWE-\d+)", text, re.IGNORECASE)
+    return match.group(1).upper() if match else text
+
+
+def _coerce_int_list(value: object) -> List[int]:
+    if not isinstance(value, list):
+        return []
+    result: List[int] = []
+    for item in value:
+        if isinstance(item, int):
+            result.append(item)
+    return result
+
+
+def _coerce_str_list(value: object) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None]
 
 
 def _clone_repo(repo_url: str, branch: str, dest: str) -> None:
@@ -58,19 +109,67 @@ def _map_finding_to_vuln(finding: dict, scan_id: str) -> VulnerabilitySummary:
     else:
         remediation = None
 
+    line_start = _coerce_int(finding.get("line_start") or finding.get("line"))
+    line_end = _coerce_int(finding.get("line_end"))
+    line_numbers = _coerce_int_list(finding.get("line_numbers"))
+    if not line_numbers and line_start is not None:
+        if line_end is not None and line_end >= line_start:
+            line_numbers = list(range(line_start, line_end + 1))
+        else:
+            line_numbers = [line_start]
+
+    exploit_chain = _coerce_str_list(finding.get("exploit_chain"))
+    finding_metadata = {
+        "confidence_score": _coerce_int(finding.get("confidence_score")),
+        "confidence_factors": finding.get("confidence_factors"),
+        "exploitability": finding.get("exploitability"),
+        "business_impact": finding.get("business_impact"),
+        "false_positive_risk": finding.get("false_positive_risk"),
+        "filepath": (
+            finding.get("file_path")
+            or finding.get("filepath")
+            or finding.get("file")
+            or finding.get("path")
+        ),
+        "line_numbers": line_numbers,
+        "attack_scenario": finding.get("attack_scenario"),
+        "exploit_chain": exploit_chain,
+        "remediation_priority": finding.get("remediation_priority"),
+        "reachability": finding.get("reachability"),
+        "dedupe_group": finding.get("dedupe_group"),
+        "related_locations": finding.get("related_locations"),
+    }
+    finding_metadata = {k: v for k, v in finding_metadata.items() if v not in (None, [], "")}
+
     return VulnerabilitySummary(
         id=finding.get("id") or str(uuid.uuid4()),
         title=finding.get("title") or finding.get("rule_id") or "Untitled Finding",
         severity=severity,
         detection_source=finding.get("detection_source") or finding.get("source") or "ai",
         owasp_category=finding.get("owasp_category"),
-        cwe_id=finding.get("cwe_id") or finding.get("cwe"),
-        file_path=finding.get("file_path") or finding.get("file"),
-        line_start=finding.get("line_start") or finding.get("line"),
-        line_end=finding.get("line_end"),
+        cwe_id=_normalize_cwe(finding.get("cwe_id") or finding.get("cwe")),
+        file_path=(
+            finding.get("file_path")
+            or finding.get("filepath")
+            or finding.get("file")
+            or finding.get("path")
+        ),
+        line_start=line_start,
+        line_end=line_end,
         code_snippet=finding.get("code_snippet") or finding.get("snippet"),
         description=finding.get("description"),
         remediation=remediation,
+        confidence_score=_coerce_int(finding.get("confidence_score")),
+        exploitability=finding.get("exploitability"),
+        business_impact=finding.get("business_impact"),
+        false_positive_risk=finding.get("false_positive_risk"),
+        filepath=finding_metadata.get("filepath"),
+        line_numbers=line_numbers or None,
+        attack_scenario=finding.get("attack_scenario"),
+        exploit_chain=exploit_chain or None,
+        remediation_priority=finding.get("remediation_priority"),
+        reachability=finding.get("reachability"),
+        finding_metadata=finding_metadata or None,
     )
 
 
@@ -129,6 +228,29 @@ async def _run_scan(scan_id: str, payload: ScanCreateRequest, user_id: str) -> N
         # Compute security score from risk_score (0.0 - 10.0 → 100 - 0)
         risk_score = float(final_report.get("risk_score", 0.0))
         security_score = max(0, min(100, int(100 - (risk_score * 10))))
+        scanned_files = _coerce_int(final_report.get("scanned_files")) or 0
+        scan_duration_ms = _coerce_int(final_report.get("scan_duration_ms")) or 0
+        summary_payload = {
+            **summary,
+            "scanned_files": scanned_files,
+            "scan_duration_ms": scan_duration_ms,
+        }
+        for key in (
+            "executive_risk_verdict",
+            "ai_security_assessment",
+            "security_score_breakdown",
+            "repository_intelligence",
+            "attack_surface_overview",
+            "file_risk_heatmap",
+            "attack_scenarios",
+            "reachability_analysis",
+            "exploit_chains",
+            "finding_deduplication",
+            "privacy_processing",
+            "risk_prioritization",
+        ):
+            if key in final_report:
+                summary_payload[key] = final_report.get(key)
 
         # Persist results
         async with AsyncSessionLocal() as session:
@@ -138,13 +260,13 @@ async def _run_scan(scan_id: str, payload: ScanCreateRequest, user_id: str) -> N
                 user_id,
                 status="completed",
                 security_score=security_score,
-                summary=summary,
+                summary=summary_payload,
             )
             await crud.replace_scan_report(
                 session,
                 scan_id,
                 user_id,
-                summary=summary,
+                summary=summary_payload,
                 security_score=security_score,
                 issues=issues,
             )

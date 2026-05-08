@@ -1,6 +1,6 @@
 from typing import Iterable, List, Optional, Tuple
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import ScanCreateRequest, ScanSummary, VulnerabilitySummary
@@ -20,6 +20,13 @@ def _to_scan_summary(scan: Scan) -> ScanSummary:
 
 
 def _to_vulnerability_summary(vuln: Vulnerability) -> VulnerabilitySummary:
+    # Avoid triggering deferred column load when older DB schema lacks finding_metadata.
+    metadata = vuln.__dict__.get("finding_metadata") or {}
+    line_numbers = metadata.get("line_numbers")
+    if not isinstance(line_numbers, list):
+        line_numbers = []
+    normalized_line_numbers = [int(x) for x in line_numbers if isinstance(x, int)]
+
     return VulnerabilitySummary(
         id=vuln.id,
         title=vuln.title,
@@ -33,7 +40,24 @@ def _to_vulnerability_summary(vuln: Vulnerability) -> VulnerabilitySummary:
         code_snippet=vuln.code_snippet,
         description=vuln.description,
         remediation=vuln.remediation,
+        confidence_score=metadata.get("confidence_score"),
+        exploitability=metadata.get("exploitability"),
+        business_impact=metadata.get("business_impact"),
+        false_positive_risk=metadata.get("false_positive_risk"),
+        filepath=metadata.get("filepath") or vuln.file_path,
+        line_numbers=normalized_line_numbers or None,
+        attack_scenario=metadata.get("attack_scenario"),
+        exploit_chain=metadata.get("exploit_chain"),
+        remediation_priority=metadata.get("remediation_priority"),
+        reachability=metadata.get("reachability"),
+        finding_metadata=metadata or None,
     )
+
+
+async def _has_finding_metadata_column(session: AsyncSession) -> bool:
+    result = await session.execute(text("PRAGMA table_info(vulnerabilities)"))
+    rows = result.fetchall()
+    return any(len(row) > 1 and row[1] == "finding_metadata" for row in rows)
 
 
 async def create_scan(
@@ -120,24 +144,26 @@ async def replace_scan_report(
     scan.summary = summary
     scan.security_score = security_score
     await session.execute(delete(Vulnerability).where(Vulnerability.scan_id == scan_id))
+    has_finding_metadata = await _has_finding_metadata_column(session)
     for issue in issues:
-        session.add(
-            Vulnerability(
-                id=issue.id,
-                scan_id=scan_id,
-                title=issue.title,
-                severity=issue.severity,
-                detection_source=issue.detection_source,
-                owasp_category=issue.owasp_category,
-                cwe_id=issue.cwe_id,
-                file_path=issue.file_path,
-                line_start=issue.line_start,
-                line_end=issue.line_end,
-                code_snippet=issue.code_snippet,
-                description=issue.description,
-                remediation=issue.remediation,
-            )
+        payload = dict(
+            id=issue.id,
+            scan_id=scan_id,
+            title=issue.title,
+            severity=issue.severity,
+            detection_source=issue.detection_source,
+            owasp_category=issue.owasp_category,
+            cwe_id=issue.cwe_id,
+            file_path=issue.file_path,
+            line_start=issue.line_start,
+            line_end=issue.line_end,
+            code_snippet=issue.code_snippet,
+            description=issue.description,
+            remediation=issue.remediation,
         )
+        if has_finding_metadata:
+            payload["finding_metadata"] = issue.finding_metadata
+        session.add(Vulnerability(**payload))
     await session.commit()
 
 
