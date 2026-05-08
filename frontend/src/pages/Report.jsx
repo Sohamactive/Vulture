@@ -122,7 +122,7 @@ export default function Report() {
         >
           <IssueList issues={activeReport.issues} />
         </motion.div>
-        
+
       </div>
     </div>
   );

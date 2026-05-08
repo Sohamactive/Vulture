@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import ScanCreateRequest, ScanSummary, VulnerabilitySummary
-from app.storage.models import Scan, Vulnerability
+from app.storage.models import ChatMessage, ChatSession, Scan, Vulnerability
 
 
 def _to_scan_summary(scan: Scan) -> ScanSummary:
@@ -157,3 +157,65 @@ async def get_scan_report(
     )
     issues = issues_result.scalars().all()
     return _to_scan_summary(scan), [_to_vulnerability_summary(issue) for issue in issues]
+
+
+async def get_scan_model(
+    session: AsyncSession,
+    scan_id: str,
+    user_id: str,
+) -> Optional[Scan]:
+    result = await session.execute(
+        select(Scan).where(Scan.id == scan_id, Scan.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_or_create_chat_session(
+    session: AsyncSession,
+    scan_id: str,
+    user_id: str,
+) -> Optional[ChatSession]:
+    result = await session.execute(
+        select(ChatSession).where(
+            ChatSession.scan_id == scan_id,
+            ChatSession.user_id == user_id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing
+
+    chat_session = ChatSession(scan_id=scan_id, user_id=user_id)
+    session.add(chat_session)
+    await session.commit()
+    await session.refresh(chat_session)
+    return chat_session
+
+
+async def list_chat_messages(
+    session: AsyncSession,
+    session_id: str,
+) -> List[ChatMessage]:
+    result = await session.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def create_chat_message(
+    session: AsyncSession,
+    session_id: str,
+    role: str,
+    content: str,
+) -> ChatMessage:
+    message = ChatMessage(
+        session_id=session_id,
+        role=role,
+        content=content,
+    )
+    session.add(message)
+    await session.commit()
+    await session.refresh(message)
+    return message

@@ -79,6 +79,20 @@ export async function exportReport(token, scanId, format = 'json') {
   return response?.data
 }
 
+export async function getChatHistory(token, scanId) {
+  const response = await apiRequest(`/chat/${scanId}/history`, { token })
+  return response?.data || []
+}
+
+export async function sendChatMessage(token, scanId, message) {
+  const response = await apiRequest(`/chat/${scanId}/message`, {
+    method: 'POST',
+    token,
+    body: { message }
+  })
+  return response?.data
+}
+
 export async function getAuthMe(token) {
   const response = await apiRequest('/auth/me', { token })
   return response?.data

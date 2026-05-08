@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Shield, ShieldAlert, ShieldCheck, Clock, ArrowRight, RefreshCw, Plus, GitBranch, Activity } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, Clock, ArrowRight, RefreshCw, Plus, GitBranch, Activity, MessageCircle } from 'lucide-react';
 import GlitchText from '../components/ui/GlitchText';
 import SeverityBadge from '../components/ui/SeverityBadge';
 import { getScanHistory, rerunScan } from '../lib/api';
@@ -266,15 +266,26 @@ export default function Dashboard() {
                     </button>
 
                     {scan.status === 'completed' && (
-                      <button
-                        className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[var(--cyan)] border border-[var(--cyan)] px-3 py-1.5 hover:bg-[#00f5ff1a] transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/report/${scan.id}`);
-                        }}
-                      >
-                        Report <ArrowRight size={12} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[var(--cyan)] border border-[var(--cyan)] px-3 py-1.5 hover:bg-[#00f5ff1a] transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/report/${scan.id}`);
+                          }}
+                        >
+                          Report <ArrowRight size={12} />
+                        </button>
+                        <button
+                          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[var(--text-dim)] border border-[var(--border)] px-3 py-1.5 hover:text-[var(--cyan)] hover:border-[var(--cyan)] transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/chat/${scan.id}`);
+                          }}
+                        >
+                          <MessageCircle size={12} /> Chat
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

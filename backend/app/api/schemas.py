@@ -72,3 +72,14 @@ class ScanReport(BaseModel):
     scanned_files: Optional[int] = None
     scan_duration_ms: Optional[int] = None
     issues: List[VulnerabilitySummary] = Field(default_factory=list)
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: Optional[str] = None
+
+
+class ChatMessageRequest(BaseModel):
+    message: str

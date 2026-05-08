@@ -1,18 +1,19 @@
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import GlitchText from '../ui/GlitchText';
-import { Terminal, FileDown, ExternalLink, LayoutDashboard } from 'lucide-react';
+import { Terminal, FileDown, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 import { useAuthToken } from '../../lib/useAuthToken';
 import { exportReport } from '../../lib/api';
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isReportPage = location.pathname.includes('/report');
   const isDashboardPage = location.pathname === '/dashboard';
   const { getToken } = useAuthToken();
 
-  // Extract scanId from report URL for export
-  const scanIdMatch = location.pathname.match(/\/report\/(.+)/);
+  // Extract scanId from report/chat URL for export and navigation
+  const scanIdMatch = location.pathname.match(/\/(?:report|chat)\/(.+)/);
   const currentScanId = scanIdMatch ? scanIdMatch[1] : null;
 
   const handleExport = async () => {
@@ -31,6 +32,17 @@ export default function Navbar() {
     } catch (err) {
       console.error('Export failed:', err);
     }
+  };
+
+  const handleChatNavigate = () => {
+    if (currentScanId) {
+      navigate(`/chat/${currentScanId}`);
+      return;
+    }
+
+    const entered = window.prompt('Enter a scan ID to open DevSecOps chat:');
+    const trimmed = entered ? entered.trim() : '';
+    if (trimmed) navigate(`/chat/${trimmed}`);
   };
 
   return (
@@ -74,6 +86,15 @@ export default function Navbar() {
               >
                 <LayoutDashboard size={16} /> Dashboard
               </Link>
+            </SignedIn>
+
+            <SignedIn>
+              <button
+                onClick={handleChatNavigate}
+                className="flex items-center gap-2 text-sm font-bold tracking-wider text-[var(--text-dim)] hover:text-[var(--cyan)] transition-colors uppercase"
+              >
+                <MessageCircle size={16} /> Chat
+              </button>
             </SignedIn>
 
             <div className="h-6 w-px bg-[var(--border)] mx-2"></div>
