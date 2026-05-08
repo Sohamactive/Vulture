@@ -43,7 +43,7 @@ def _fetch_github_repos(token: str) -> List[RepoSummary]:
 
 @router.get("", response_model=ApiResponse)
 def list_repos(
-    _user=Depends(get_current_user),
+    user=Depends(get_current_user),
     token: str = Depends(get_github_token),
 ) -> ApiResponse:
     try:

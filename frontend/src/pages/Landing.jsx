@@ -1,63 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Clock, CheckCircle, Cpu, Lock, ArrowRight, GitBranch } from 'lucide-react';
+import { Clock, CheckCircle, Cpu, Lock, ArrowRight, GitBranch, ChevronDown } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react';
 import VantaFog from '../components/ui/VantaFog';
 import FloatingTerminal from '../components/ui/FloatingTerminal';
 import { useScanStore } from '../store/scanStore';
 import ScanProgress from '../components/upload/ScanProgress';
 import ReportView from '../components/report/ReportView';
+import { getRepos, getAuthMe } from '../lib/api';
+import { useAuthToken } from '../lib/useAuthToken';
 
 export default function Landing() {
-  const navigate = useNavigate();
-  const { user, isLoaded, isSignedIn } = useUser();
-  const { scanStatus, setScanStatus, resetScan } = useScanStore();
+  const { isSignedIn } = useUser();
+  const { getToken } = useAuthToken();
+  const { scanStatus, setScanStatus, resetScan, scanId, setRepoUrl: setStoredRepoUrl } = useScanStore();
   const [repos, setRepos] = useState([]);
   const [repoUrl, setRepoUrl] = useState('');
   const [loadingRepos, setLoadingRepos] = useState(false);
   const scanSectionRef = React.useRef(null);
 
   useEffect(() => {
-    if (isSignedIn && user) {
-      // Debug user object
-      console.log("Clerk User:", user);
-      
-      const externalAccount = user.externalAccounts?.find(a => a.provider === "oauth_github");
-      // Sometimes Clerk uses different properties for the username depending on the account data
-      const githubUsername = externalAccount?.username || user.username || user.primaryEmailAddress?.emailAddress?.split('@')[0];
-      
-      console.log("Found GitHub Username:", githubUsername);
-      
-      if (githubUsername) {
-        setLoadingRepos(true);
-        fetch(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=100`)
-          .then(res => {
-            console.log("GitHub API Status:", res.status);
-            return res.json();
-          })
-          .then(data => {
-            console.log("GitHub API Data:", data);
-            if (Array.isArray(data)) {
-              setRepos(data);
-              if (data.length > 0) setRepoUrl(data[0].html_url);
-            } else {
-              console.error("Failed to parse repos or rate limited:", data);
-              // Fallback to manual input or show error in dropdown
-              setRepos([{ id: 'error', full_name: 'Error fetching repos (check console)', html_url: '' }]);
-            }
-          })
-          .catch(err => {
-            console.error("Fetch Error:", err);
-            setRepos([{ id: 'error', full_name: 'Network error fetching repos', html_url: '' }]);
-          })
-          .finally(() => setLoadingRepos(false));
-      } else {
-        console.warn("No github username could be found on the Clerk user object.");
-        setRepos([{ id: 'error', full_name: 'No GitHub username linked to account', html_url: '' }]);
-      }
+    if (!isSignedIn) {
+      setRepos([]);
+      return;
     }
-  }, [isSignedIn, user]);
+
+    let cancelled = false;
+    setLoadingRepos(true);
+
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+
+        await getAuthMe(token);
+        const data = await getRepos(token);
+
+        if (cancelled) return;
+
+        if (Array.isArray(data)) {
+          setRepos(data);
+          if (data.length > 0) setRepoUrl(data[0].html_url || '');
+        } else {
+          setRepos([{ id: 'error', full_name: 'Error fetching repos', html_url: '' }]);
+        }
+      } catch {
+        if (!cancelled) {
+          setRepos([{ id: 'error', full_name: 'Failed to fetch repos', html_url: '' }]);
+        }
+      } finally {
+        if (!cancelled) setLoadingRepos(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isSignedIn, getToken]);
 
   // Reset scan state on mount
   useEffect(() => {
@@ -67,6 +64,7 @@ export default function Landing() {
   const handleScan = (e) => {
     e.preventDefault();
     if (repoUrl.trim()) {
+      setStoredRepoUrl(repoUrl.trim());
       setScanStatus('scanning');
       // Scroll to scan section
       setTimeout(() => {
@@ -127,35 +125,35 @@ export default function Landing() {
 
                 <SignedIn>
                   <form onSubmit={handleScan} className="flex items-center w-full bg-[var(--bg-panel)] rounded-full border border-[var(--border)] overflow-hidden shadow-2xl group hover:border-[var(--text-dim)] transition-colors">
-                    <div className="flex-grow px-6 py-4 flex items-center gap-3 bg-transparent">
-                      <GitBranch size={20} className="text-[var(--text-dim)]" />
+                    <div className="flex-grow px-6 py-4 flex items-center gap-3 bg-transparent relative">
+                      <GitBranch size={20} className="text-[var(--text-dim)] flex-shrink-0" />
                       {loadingRepos ? (
-                        <span className="text-[var(--text-dim)] font-mono text-sm">Loading repositories...</span>
+                        <div className="flex items-center gap-2 text-[var(--text-dim)] font-mono text-sm">
+                          <div className="w-4 h-4 border-2 border-[var(--cyan)] border-t-transparent rounded-full animate-spin"></div>
+                          Loading repositories...
+                        </div>
                       ) : repos.length > 0 && repos[0].id !== 'error' ? (
-                        <select 
-                          value={repoUrl}
-                          onChange={(e) => setRepoUrl(e.target.value)}
-                          className="w-full bg-transparent border-none text-[var(--text-primary)] outline-none font-mono text-sm appearance-none cursor-pointer"
-                        >
-                          {repos.map(repo => (
-                            <option key={repo.id} value={repo.html_url} className="bg-[var(--bg-panel)]">
-                              {repo.full_name} {repo.private ? '(Private)' : ''}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative w-full">
+                          <select 
+                            value={repoUrl}
+                            onChange={(e) => setRepoUrl(e.target.value)}
+                            className="w-full bg-transparent border-none text-[var(--text-primary)] outline-none font-mono text-sm appearance-none cursor-pointer pr-8"
+                          >
+                            {repos.map(repo => (
+                              <option key={repo.id} value={repo.html_url} className="bg-[var(--bg-panel)] text-[var(--text-primary)]">
+                                {repo.full_name}{repo.language ? ` · ${repo.language}` : ''}{repo.visibility === 'private' ? ' 🔒' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown size={16} className="absolute right-0 top-1/2 -translate-y-1/2 text-[var(--text-dim)] pointer-events-none" />
+                        </div>
                       ) : (
-                        <input 
-                          type="text" 
-                          value={repoUrl}
-                          onChange={(e) => setRepoUrl(e.target.value)}
-                          placeholder="https://github.com/username/repo"
-                          className="flex-grow bg-transparent border-none text-[var(--text-primary)] outline-none font-mono text-sm placeholder:text-[var(--border)] w-full"
-                        />
+                        <span className="text-[var(--text-dim)] font-mono text-sm">No repositories found</span>
                       )}
                     </div>
                     <button 
                       type="submit" 
-                      disabled={!repoUrl}
+                      disabled={!repoUrl || loadingRepos || repos.length === 0 || repos[0]?.id === 'error'}
                       className="bg-[var(--cyan)] text-white font-bold px-8 py-4 flex items-center gap-2 hover:bg-[#00f5ff] hover:shadow-[0_0_20px_var(--color-cyber-cyan)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Scan <ArrowRight size={18} />
@@ -163,8 +161,8 @@ export default function Landing() {
                   </form>
                   <p className="text-xs text-[var(--text-dim)] pl-6 mt-4">
                     {repos.length > 0 && repos[0].id !== 'error' 
-                      ? "Select a repository from your GitHub account to analyze." 
-                      : "Paste any public GitHub URL — we clone, scan, and report"}
+                      ? `${repos.length} repositories available — select one to analyze.` 
+                      : "We couldn't load your repositories. Please try again later."}
                   </p>
                 </SignedIn>
               </div>
@@ -252,7 +250,22 @@ export default function Landing() {
             
             {scanStatus === 'complete' && (
               <div className="w-full">
-                <ReportView scanId="demo-123" />
+                <ReportView scanId={scanId || 'unknown'} />
+              </div>
+            )}
+
+            {scanStatus === 'error' && (
+              <div className="flex flex-col items-center mb-12">
+                <h2 className="text-3xl md:text-5xl font-bold mb-4">
+                  <span className="text-[var(--red)]">Scan Failed</span>
+                </h2>
+                <p className="text-[var(--text-dim)] mb-6">{useScanStore.getState().scanError || 'An unexpected error occurred.'}</p>
+                <button
+                  onClick={() => resetScan()}
+                  className="border border-[var(--cyan)] text-[var(--cyan)] px-6 py-2 font-bold uppercase tracking-widest text-sm hover:bg-[#00f5ff1a] transition-all"
+                >
+                  Try Again
+                </button>
               </div>
             )}
           </motion.div>

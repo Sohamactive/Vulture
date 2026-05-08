@@ -3,6 +3,7 @@ import Navbar from './components/layout/Navbar'
 import Landing from './pages/Landing'
 import Scan from './pages/Scan'
 import Report from './pages/Report'
+import Dashboard from './pages/Dashboard'
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
 
 // ProtectedRoute component requires auth
@@ -25,6 +26,7 @@ function App() {
           <Route path="/" element={<Landing />} />
 
           {/* Protected Routes */}
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
           <Route path="/report/:scanId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
         </Routes>

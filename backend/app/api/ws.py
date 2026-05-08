@@ -1,9 +1,9 @@
 from fastapi import APIRouter, WebSocket
 
-router = APIRouter()
+router = APIRouter(prefix="/ws", tags=["ws"])
 
 
-@router.websocket("/ws/scans/{scan_id}")
+@router.websocket("/scans/{scan_id}")
 async def scan_progress(websocket: WebSocket, scan_id: str) -> None:
     await websocket.accept()
     await websocket.send_json({"type": "log", "message": "connected", "scan_id": scan_id})

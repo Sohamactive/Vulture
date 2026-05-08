@@ -11,19 +11,31 @@ export const useScanStore = create((set) => ({
   scanStatus: 'idle',   // idle | scanning | complete | error
   scanProgress: 0,
   scanLogs: [],
+  scanId: null,
+  scanError: null,
   addLog: (line) => set((s) => ({ scanLogs: [...s.scanLogs, line] })),
   setProgress: (p) => set({ scanProgress: p }),
   setScanStatus: (status) => set({ scanStatus: status }),
+  setScanId: (scanId) => set({ scanId }),
+  setScanError: (scanError) => set({ scanError }),
 
   // Report state
   report: null,
   setReport: (r) => set({ report: r, scanStatus: 'complete' }),
+
+  // Scan history state
+  scanHistory: [],
+  loadingScanHistory: false,
+  setScanHistory: (history) => set({ scanHistory: history }),
+  setLoadingScanHistory: (loading) => set({ loadingScanHistory: loading }),
   
   // Reset
   resetScan: () => set({ 
     scanStatus: 'idle', 
     scanProgress: 0, 
     scanLogs: [], 
+    scanId: null,
+    scanError: null,
     uploadedFile: null, 
     repoUrl: '', 
     report: null 

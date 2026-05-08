@@ -2,7 +2,6 @@
 
 This backend exposes a connectivity probe to verify AWS Bedrock Claude access.
 
-If Bedrock fails or is not configured, the endpoint can fall back to Gemini.
 
 ### Required Environment Variables
 
@@ -10,14 +9,22 @@ If Bedrock fails or is not configured, the endpoint can fall back to Gemini.
 - `AWS_BEDROCK_OPENAI_BASE_URL` (OpenAI-compatible Bedrock endpoint URL)
 - `OPENAI_API_KEY` (API key or token for the OpenAI-compatible endpoint)
 
-### Gemini Fallback (Optional)
-
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL_ID` (default: `gemini-1.5-flash`)
-
 ### Endpoint
 
 `POST /api/connectivity`
+
+## Main API Routes
+
+- `GET /api/health`
+- `GET /api/auth/me`
+- `GET /api/repos`
+- `POST /api/scans`
+- `GET /api/scans/history`
+- `GET /api/scans/{scan_id}`
+- `POST /api/scans/{scan_id}/rerun`
+- `GET /api/reports/{scan_id}/vulnerabilities`
+- `GET /api/reports/{scan_id}/export?export_format=json|pdf`
+- `WS /api/ws/scans/{scan_id}`
 
 Request body:
 

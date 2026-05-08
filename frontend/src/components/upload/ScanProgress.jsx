@@ -1,48 +1,183 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import TerminalLine from '../ui/TerminalLine';
 import { useScanStore } from '../../store/scanStore';
-import { useNavigate } from 'react-router-dom';
+import { createScan, getReport, getScan } from '../../lib/api';
+import { useAuthToken } from '../../lib/useAuthToken';
+import { mapReport } from '../../lib/reportMapper';
 
 export default function ScanProgress() {
-  const { scanProgress, scanLogs, scanStatus, addLog, setProgress, setScanStatus } = useScanStore();
-  const navigate = useNavigate();
+  const {
+    uploadedFile,
+    repoUrl,
+    scanProgress,
+    scanLogs,
+    scanStatus,
+    scanError,
+    addLog,
+    setProgress,
+    setScanStatus,
+    setReport,
+    setScanId,
+    setScanError
+  } = useScanStore();
+  const { getToken } = useAuthToken();
+  const hasStarted = useRef(false);
+  const lastStatus = useRef(null);
+  const progressRef = useRef(0);
 
-  // Mock scan simulation for frontend dev
+  const logStatus = (status) => {
+    if (!status || lastStatus.current === status) return;
+    lastStatus.current = status;
+
+    const messages = {
+      pending: 'Queued scan request...',
+      cloning: 'Cloning target repository...',
+      semgrep_scanning: 'Running Semgrep security rules...',
+      parsing: 'Extracting AST and control flow graphs...',
+      analyzing: 'Running AI semantic analysis...',
+      completed: 'Scan complete ✓',
+      failed: 'Scan failed ✗'
+    };
+
+    if (messages[status]) {
+      addLog(messages[status]);
+    }
+  };
+
+  const getProgressForStatus = (status) => {
+    const map = {
+      pending: 10,
+      cloning: 25,
+      semgrep_scanning: 40,
+      parsing: 55,
+      analyzing: 75,
+      completed: 100,
+      failed: 100
+    };
+
+    return map[status] ?? 20;
+  };
+
+  const updateProgress = (value) => {
+    const nextValue = Math.max(progressRef.current, value);
+    progressRef.current = nextValue;
+    setProgress(nextValue);
+  };
+
+  const parseRepoUrl = (url) => {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+      if (parts.length < 2) return null;
+      return { owner: parts[0], name: parts[1] };
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const startBackendScan = async () => {
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+    progressRef.current = 0;
+
+    const token = await getToken();
+    if (!token) {
+      addLog('Missing auth token. Please sign in again.');
+      setScanError('Missing auth token');
+      setScanStatus('error');
+      return;
+    }
+
+    if (!repoUrl) {
+      if (uploadedFile) {
+        addLog('File uploads are not supported by the backend yet.');
+      } else {
+        addLog('Repository URL is required to start a scan.');
+      }
+      setScanError('Missing repository URL');
+      setScanStatus('error');
+      return;
+    }
+
+    const repoInfo = parseRepoUrl(repoUrl);
+    if (!repoInfo) {
+      addLog('Invalid repository URL. Use https://github.com/owner/repo');
+      setScanError('Invalid repository URL');
+      setScanStatus('error');
+      return;
+    }
+
+    addLog('Initializing VulnBot Core...');
+    updateProgress(5);
+
+    const payload = {
+      repo_url: repoUrl,
+      repo_owner: repoInfo.owner,
+      repo_name: repoInfo.name,
+      branch: 'main'
+    };
+
+    try {
+      const summary = await createScan(token, payload);
+      if (!summary?.id) {
+        throw new Error('Scan creation did not return an id');
+      }
+      setScanId(summary.id);
+      logStatus(summary?.status || 'pending');
+      updateProgress(getProgressForStatus(summary?.status || 'pending'));
+
+      let cancelled = false;
+
+      const poll = async () => {
+        if (cancelled) return;
+        try {
+          // Refresh token on each poll in case it expires
+          const freshToken = await getToken();
+          if (!freshToken || cancelled) return;
+
+          const scan = await getScan(freshToken, summary.id);
+          logStatus(scan?.status);
+          updateProgress(getProgressForStatus(scan?.status));
+
+          if (scan?.status === 'completed') {
+            const report = await getReport(freshToken, summary.id);
+            setReport(mapReport(report));
+            setScanStatus('complete');
+            return;
+          }
+
+          if (scan?.status === 'failed') {
+            addLog('Scan failed on the server.');
+            setScanError('Scan failed');
+            setScanStatus('error');
+            return;
+          }
+
+          setTimeout(poll, 2500);
+        } catch (error) {
+          addLog('Failed to fetch scan status.');
+          setScanError(error?.message || 'Scan status error');
+          setScanStatus('error');
+        }
+      };
+
+      setTimeout(poll, 1500);
+
+      return () => {
+        cancelled = true;
+      };
+    } catch (error) {
+      addLog(`Failed to start scan: ${error?.message || 'Unknown error'}`);
+      setScanError(error?.message || 'Scan start error');
+      setScanStatus('error');
+    }
+  };
+
+  // Backend-driven scan state
   useEffect(() => {
     if (scanStatus !== 'scanning') return;
-
-    const mockLogs = [
-      "Initializing VulnBot Core...",
-      "Cloning target repository...",
-      "Extracting AST and control flow graphs...",
-      "Running semantic analysis rules...",
-      "Checking against OWASP Top 10 A01-A10...",
-      "Querying global CVE database...",
-      "Analyzing dependencies for outdated packages...",
-      "Generating vulnerability map...",
-      "Compiling final security report...",
-      "Scan complete ✓"
-    ];
-
-    let currentLog = 0;
-    
-    const interval = setInterval(() => {
-      if (currentLog < mockLogs.length) {
-        addLog(mockLogs[currentLog]);
-        setProgress(Math.floor((currentLog / mockLogs.length) * 100));
-        currentLog++;
-      } else {
-        clearInterval(interval);
-        setProgress(100);
-        setTimeout(() => {
-          setScanStatus('complete');
-          // No longer navigating away, Landing.jsx will handle rendering the report inline
-        }, 1500);
-      }
-    }, 800); // 800ms between lines for effect
-
-    return () => clearInterval(interval);
-  }, [scanStatus, addLog, setProgress, setScanStatus]);
+    startBackendScan();
+  }, [scanStatus]);
 
   const progressBarColor = 
     scanProgress < 30 ? 'bg-[var(--cyan)]' : 
@@ -89,6 +224,17 @@ export default function ScanProgress() {
             ></div>
           </div>
         </div>
+
+        {/* Error Footer */}
+        {scanError && (
+          <div className="border-t border-[var(--red)] p-4 bg-[#ff2d5511]">
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--red)] text-sm font-bold uppercase tracking-wider">
+                ✗ {scanError}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
