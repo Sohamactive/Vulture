@@ -23,29 +23,18 @@ from typing import Any, AsyncGenerator
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
+import sys
+# Add backend root to sys.path to allow running as a script
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 from app.agents.vuln_agent import run_vuln_agent
 
-try:
-    from app.code_parsing.ast_parser import parse_python_file
-    from app.code_parsing.call_graph import build_call_graph
-    from app.code_parsing.file_reader import read_codebase
-    from app.code_parsing.semgrep_runner import run_semgrep
-    from app.code_parsing.treesitter_parser import parse_file as parse_ts_file
-    from app.logger import get_logger
-except ImportError:
-    import logging as _logging
-
-    def get_logger(name: str) -> _logging.Logger:  # type: ignore[misc]
-        return _logging.getLogger(name)
-
-    # Allow running as __main__ without installed package
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-    from app.code_parsing.ast_parser import parse_python_file           # noqa: F811
-    from app.code_parsing.call_graph import build_call_graph             # noqa: F811
-    from app.code_parsing.file_reader import read_codebase               # noqa: F811
-    from app.code_parsing.semgrep_runner import run_semgrep              # noqa: F811
-    from app.code_parsing.treesitter_parser import parse_file as parse_ts_file  # noqa: F811
+from app.code_parsing.ast_parser import parse_python_file
+from app.code_parsing.call_graph import build_call_graph
+from app.code_parsing.file_reader import read_codebase
+from app.code_parsing.semgrep_runner import run_semgrep
+from app.code_parsing.treesitter_parser import parse_file as parse_ts_file
+from app.logger import get_logger
 
 logger = get_logger(__name__)
 
